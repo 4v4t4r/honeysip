@@ -50,8 +50,8 @@ class Address(object):
 
         if len(self.params) > 0:
             params = []
-            for n,v in self.params.items():
-                params.append(b"=".join([n,v]))
+            for n, v in self.params.items():
+                params.append(b"=".join([n, v]))
 
             r = r + b";" + b";".join(params)
         return r

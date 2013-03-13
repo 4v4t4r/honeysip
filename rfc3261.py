@@ -273,7 +273,7 @@ class Header(object):
         else:
             value = data
 
-        return len(data), {'name':name,'value':value}
+        return len(data), {'name': name, 'value': value}
 
     def format_name(self, name):
         name = name.lower()
@@ -487,22 +487,22 @@ class Message(object):
         # create contact header
         addr = self.headers.get(b"to", None)._value
         uri = rfc2396.URI(
-            scheme = addr.uri.scheme,
-            user = addr.uri.user,
-            host = addr.uri.host,
-            port = addr.uri.port
+            scheme=addr.uri.scheme,
+            user=addr.uri.user,
+            host=addr.uri.host,
+            port=addr.uri.port
         )
 
-        cont_addr = rfc2396.Address(uri = uri)
+        cont_addr = rfc2396.Address(uri=uri)
 
-        contact = Header(name = b"contact", value = cont_addr)
+        contact = Header(name=b"contact", value=cont_addr)
         res.headers.append(contact)
 
         from sip import g_sipconfig
         handler = g_sipconfig.get_handlers_by_personality(self._personality)
 
-        res.headers.append(Header(name = b"allow", value = ", ".join(handler)))
-        res.headers.append(Header(name = b"content-length", value = 0))
+        res.headers.append(Header(name=b"allow", value=", ".join(handler)))
+        res.headers.append(Header(name=b"content-length", value=0))
 
         return res
 
