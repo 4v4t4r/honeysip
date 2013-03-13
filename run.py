@@ -1,8 +1,5 @@
 import logging
 
-import sip
-
-
 # Setup logging mechanism
 logger = logging.getLogger('sip')
 logConsole = logging.StreamHandler()
@@ -10,11 +7,12 @@ logConsole.setLevel(logging.DEBUG)
 logConsole.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 logger.addHandler(logConsole)
 
+import sip
+
 
 if __name__ == '__main__':
-    s = sip.SipSession(addr=('192.168.1.2', 5060), proto="udp")
+    sip_session = sip.SipSession(addr=('192.168.1.2', 5060), proto="udp")
     try:
-        print "Looping now..."
-        s.serve_forever()
+        sip_session.serve_forever()
     except KeyboardInterrupt:
         print("Closing socket...")

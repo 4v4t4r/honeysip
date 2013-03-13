@@ -41,21 +41,21 @@ import datetime
 import tempfile
 
 import conf
-import rfc3261
-import rfc4566
-import rfc2617
 
 from gevent.server import DatagramServer as connection
+
+logger = logging.getLogger('sip')
+logger.setLevel(logging.DEBUG)
+
 from extras import SipConfig, ErrorWithResponse
 
 # load config before loading the other sip modules
 g_sipconfig = SipConfig(conf.sip)
 
+import rfc3261
+import rfc4566
+import rfc2617
 
-logger = logging.getLogger('sip')
-logger.setLevel(logging.DEBUG)
-
-_SipCall_sustain_timeout = 20
 
 # Dictionary with SIP sessions (key is Call-ID)
 g_call_ids = {}
@@ -240,8 +240,6 @@ class SipCall(connection):
             self.__session.personality,
             user
         )
-
-        global _SipCall_sustain_timeout
 
     def __handle_timeout_idle(self, watcher, events):
         logger.debug("{:s} __handle_timeout_idle".format(self))
@@ -509,7 +507,7 @@ class SipSession(connection):
     ESTABLISHED, CLOSED = range(2)
 
     def __init__(self, addr, proto=None):
-        logger.debug("{:s} __init__".format(self))
+        logger.debug("SipSession __init__")
         self.transport = proto
         connection.__init__(self, addr)
         # FIXME: Use the proper address
