@@ -1,7 +1,5 @@
 import logging
 
-import gevent
-
 import sip
 
 
@@ -13,19 +11,10 @@ logConsole.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)
 logger.addHandler(logConsole)
 
 
-class SIPServer(DatagramServer):
-
-    def handle(self, data, address):
-        print '%s: got %r' % (address[0], data)
-        self.socket.sendto('Received %s bytes' % len(data), address)
-
-
 if __name__ == '__main__':
-    s = sip.SipSession(proto="udp")
-    s.bind(('localhost', 5060))
-
+    s = sip.SipSession(addr=('192.168.1.2', 5060), proto="udp")
     try:
         print "Looping now..."
-        SIPServer('localhost:5060').serve_forever()
+        s.serve_forever()
     except KeyboardInterrupt:
         print("Closing socket...")

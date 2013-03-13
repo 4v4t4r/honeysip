@@ -41,16 +41,15 @@ import datetime
 import tempfile
 
 import conf
-from mock_connection import connection
-
-from extras import msg_to_icd, SipConfig, ErrorWithResponse
-
-# load config before loading the other sip modules
-g_sipconfig = SipConfig(conf.sip)
-
 import rfc3261
 import rfc4566
 import rfc2617
+
+from gevent.server import DatagramServer as connection
+from extras import SipConfig, ErrorWithResponse
+
+# load config before loading the other sip modules
+g_sipconfig = SipConfig(conf.sip)
 
 
 logger = logging.getLogger('sip')
@@ -509,10 +508,10 @@ class SipCall(connection):
 class SipSession(connection):
     ESTABLISHED, CLOSED = range(2)
 
-    def __init__(self, proto=None):
+    def __init__(self, addr, proto=None):
         logger.debug("{:s} __init__".format(self))
         self.transport = proto
-        connection.__init__(self, proto)
+        connection.__init__(self, addr)
         # FIXME: Use the proper address
         self.personality = g_sipconfig.get_personality_by_address("192.168.1.2")
 
@@ -524,21 +523,16 @@ class SipSession(connection):
         logger.debug("{:s} handle_established".format(self))
         self._state = SipSession.ESTABLISHED
 
-    def handle_timeout_sustain(self):
-        logger.debug("{:s} handle_timeout_sustain".format(self))
-        return True
-
     def handle_timeout_idle(self):
         logger.debug("{:s} handle_timeout_idle".format(self))
         self.close()
         return False
 
-    def handle_read(self):
-        data, source = self.recvfrom(1024)
+    def handle(self, data, source):
+        logger.debug("{:s} handle".format(self))
         self.remote_host = source[0]
         self.remote_port = source[1]
         print repr(data)
-        logger.debug("{:s} handle_io_in".format(self))
         if self._state == SipSession.CLOSED:
             # Don't process any data while the connection is closed.
             return len(data)
@@ -754,4 +748,4 @@ class SipSession(connection):
     def send(self, s):
         logger.debug("{:s} send".format(self))
         logger.debug('Sending message "{}" to ({}:{})'.format(s, self.remote_host, self.remote_port))
-        connection.send(self, s, (self.remote_host, self.remote_port))
+        self.socket.sendto(s, (self.remote_host, self.remote_port))
