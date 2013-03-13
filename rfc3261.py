@@ -76,67 +76,67 @@ DOES_NOT_EXIST_ANYWHERE = 604
 NOT_ACCEPTABLE = 606
 
 status_messages = {
-# Provisional 1xx
-100: b"Trying",
-180: b"Ringing",
-181: b"Call Is Being Forwarded",
-182: b"Queued",
-183: b"Session Progress",
+    # Provisional 1xx
+    100: b"Trying",
+    180: b"Ringing",
+    181: b"Call Is Being Forwarded",
+    182: b"Queued",
+    183: b"Session Progress",
 
-# Successful 2xx
-200: b"OK",
+    # Successful 2xx
+    200: b"OK",
 
-# Redirection 3xx
-300: b"Multiple Choices",
-301: b"Moved Permanently",
-302: b"Moved Temporarily",
-305: b"Use Proxy",
-380: b"Alternative Service",
+    # Redirection 3xx
+    300: b"Multiple Choices",
+    301: b"Moved Permanently",
+    302: b"Moved Temporarily",
+    305: b"Use Proxy",
+    380: b"Alternative Service",
 
-# Request Failure 4xx
-400: b"Bad Request",
-401: b"Unauthorized",
-402: b"Payment Required",
-403: b"Forbidden",
-404: b"Not Found",
-405: b"Method Not Allowed",
-406: b"Not Acceptable",
-407: b"Proxy Authentication Required",
-408: b"Request Timeout",
-410: b"Gone",
-413: b"Request Entity Too Large",
-414: b"Request-URI Too Large",
-415: b"Unsupported Media Type",
-416: b"Unsupported URI Scheme",
-420: b"Bad Extension",
-421: b"Extension Required",
-423: b"Interval Too Brief",
-480: b"Temporarily Unavailable",
-481: b"Call/Transaction Does Not Exist",
-482: b"Loop Detected",
-483: b"Too Many Hops",
-484: b"Address Incomplete",
-485: b"Ambiguous",
-486: b"Busy Here",
-487: b"Request Terminated",
-488: b"Not Acceptable Here",
-491: b"Request Pending",
-493: b"Undecipherable",
+    # Request Failure 4xx
+    400: b"Bad Request",
+    401: b"Unauthorized",
+    402: b"Payment Required",
+    403: b"Forbidden",
+    404: b"Not Found",
+    405: b"Method Not Allowed",
+    406: b"Not Acceptable",
+    407: b"Proxy Authentication Required",
+    408: b"Request Timeout",
+    410: b"Gone",
+    413: b"Request Entity Too Large",
+    414: b"Request-URI Too Large",
+    415: b"Unsupported Media Type",
+    416: b"Unsupported URI Scheme",
+    420: b"Bad Extension",
+    421: b"Extension Required",
+    423: b"Interval Too Brief",
+    480: b"Temporarily Unavailable",
+    481: b"Call/Transaction Does Not Exist",
+    482: b"Loop Detected",
+    483: b"Too Many Hops",
+    484: b"Address Incomplete",
+    485: b"Ambiguous",
+    486: b"Busy Here",
+    487: b"Request Terminated",
+    488: b"Not Acceptable Here",
+    491: b"Request Pending",
+    493: b"Undecipherable",
 
-# Server Failure 5xx
-500: b"Internal Server Error",
-501: b"Not Implemented",
-502: b"Bad Gateway",
-503: b"Service Unavailable",
-504: b"Server Time-out",
-505: b"Version Not Supported",
-513: b"Message Too Large",
+    # Server Failure 5xx
+    500: b"Internal Server Error",
+    501: b"Not Implemented",
+    502: b"Bad Gateway",
+    503: b"Service Unavailable",
+    504: b"Server Time-out",
+    505: b"Version Not Supported",
+    513: b"Message Too Large",
 
-# Global Failures 6xx
-600: b"Busy Everywhere",
-603: b"Decline",
-604: b"Does Not Exist Anywhere",
-606: b"Not Acceptable",
+    # Global Failures 6xx
+    600: b"Busy Everywhere",
+    603: b"Decline",
+    604: b"Does Not Exist Anywhere",
+    606: b"Not Acceptable",
 }
 
 
@@ -155,9 +155,9 @@ class CSeq(object):
     >>> print(cseq1.dumps(), cseq2.dumps(), cseq1.seq, cseq1.method)
     b'100 INVITE' b'100 INVITE' 100 b'INVITE'
     """
-    def __init__(self, data = None, seq = None, method = None):
+    def __init__(self, data=None, seq=None, method=None):
         # do we need to convert the data?
-        if seq != None and type(seq) == str:
+        if seq and type(seq) == str:
             seq = int(seq)
         if type(method) == str:
             method = bytes(method)
@@ -169,7 +169,7 @@ class CSeq(object):
         return int2bytes(self.seq) + b" " + self.method
 
     @classmethod
-    def froms(cls,data):
+    def froms(cls, data):
         return cls(**cls.loads(data)[1])
 
     @classmethod
@@ -180,7 +180,7 @@ class CSeq(object):
         d = data.partition(b" ")
         seq = int(d[0].decode("utf-8"))
         method = d[2].strip()
-        return (len(data), {'seq':seq,'method':method})
+        return len(data), {'seq': seq,'method': method}
 
 
 class Header(object):
@@ -205,22 +205,22 @@ class Header(object):
         b"to"
     ]
     _exception = {
-    b"call-id": b"Call-ID",
-    b"cseq": b"CSeq",
-    b"www-authenticate": b"WWW-Authenticate"
+        b"call-id": b"Call-ID",
+        b"cseq": b"CSeq",
+        b"www-authenticate": b"WWW-Authenticate"
     }
 
     _header_compact2long = {
-    b"c": b"content-type",
-    b"e": b"content-encoding",
-    b"f": b"from",
-    b"i": b"call-id",
-    b"k": b"supported",
-    b"l": b"content-length",
-    b"m": b"contact", # m = moved
-    b"s": b"subject",
-    b"t": b"to",
-    b"v": b"via"
+        b"c": b"content-type",
+        b"e": b"content-encoding",
+        b"f": b"from",
+        b"i": b"call-id",
+        b"k": b"supported",
+        b"l": b"content-length",
+        b"m": b"contact", # m = moved
+        b"s": b"subject",
+        b"t": b"to",
+        b"v": b"via"
     }
 
     def __init__(self, name, value=None):
@@ -236,7 +236,7 @@ class Header(object):
         """
         Dump the value with header name.
         """
-        return self.format_name(self.name) + b": "  + self.get_value()
+        return self.format_name(self.name) + b": " + self.get_value()
 
     @classmethod
     def froms(cls, data, name=None):
@@ -334,16 +334,16 @@ class Headers(object):
     def __iter__(self):
         return iter(self._headers)
 
-    def append(self, headers, copy = False, name_new = None):
-        if headers == None:
+    def append(self, headers, copy=False, name_new=None):
+        if not headers:
             return
 
         if type(headers) != list:
             headers = [headers]
         for header in headers:
-            if copy == True:
+            if copy:
                 header = Header.froms(header.dumps())
-            if name_new != None:
+            if name_new:
                 header.name = name_new
 
             if header.name in self._single:
@@ -440,7 +440,8 @@ class Message(object):
     b'IN IP4 192.168.1.2'
     """
 
-    def __init__(self, method=None, uri=None, response_code=None, status_message=None, protocol=None, body=None, headers=None, sdp=None, personality="default"):
+    def __init__(self, method=None, uri=None, response_code=None, status_message=None, protocol=None, body=None,
+                 headers=None, sdp=None, personality="default"):
         self.method = method
         self.uri = uri
         self.response_code = response_code
@@ -449,7 +450,7 @@ class Message(object):
         self._body = body
         self._personality = personality
 
-        if headers == None:
+        if not headers:
             headers = Headers()
 
         self.headers = headers
@@ -457,7 +458,7 @@ class Message(object):
         #: time of package creation
         self.time = time.time()
 
-    def create_response(self, code, message = None, personality = None):
+    def create_response(self, code, message=None, personality=None):
         logger.info("Creating Response: code={}, message={}".format(code, message))
 
         if personality:
@@ -538,7 +539,7 @@ class Message(object):
 
         return self.headers_exist([header_name], True)
 
-    def headers_exist(self, headers, overwrite = False):
+    def headers_exist(self, headers, overwrite=False):
         if not overwrite:
             headers = headers + [b"to", b"from", b"call-id", b"cseq", b"contact"]
 
@@ -622,7 +623,7 @@ class Message(object):
                         })
                         raise ErrorWithResponse(msg, BAD_REQUEST, "Invalid SIP body")
 
-                l = l + content_length
+                l += content_length
             else:
                 logger.info("Body is to short than the given content-length: Content-Length {}, Body {}".format(content_length, len(body)))
         return (
@@ -676,13 +677,13 @@ class Via(object):
 
     def dumps(self):
         ret = b"SIP/2.0/" + self.protocol.upper() + b" " + self.address
-        if self.port != None:
+        if self.port:
             ret = ret + b":" + int2bytes(self.port)
 
-        if self._params != None and len(self._params) > 0:
+        if self._params and len(self._params) > 0:
             params = []
             for x in self._params:
-                if x[1] != b"" and x[1] != None:
+                if x[1] != b"" and x[1]:
                     params.append(b"=".join(x))
                 else:
                     params.append(x[0])
@@ -690,7 +691,7 @@ class Via(object):
 
         return ret
 
-    def get_param(self, name, default = None):
+    def get_param(self, name, default=None):
         for x in self._params:
             if x[0] == name:
                 return x[1]
@@ -707,7 +708,6 @@ class Via(object):
     def froms(cls, data):
         return cls(**cls.loads(data)[1])
 
-
     @classmethod
     def loads(cls, data):
         m = cls._syntax.match(data)
@@ -717,7 +717,7 @@ class Via(object):
         protocol = m.group("protocol")
         address = m.group("address")
         port = m.group("port")
-        if port != None:
+        if port:
             try:
                 port = int(port)
             except:
@@ -741,13 +741,13 @@ class Via(object):
             params.append((t[0], v))
 
         return (
-        m.end(),
-        {
-        "protocol": protocol,
-        "address": address,
-        "port": port,
-        "params": params
-        }
+            m.end(),
+            {
+                "protocol": protocol,
+                "address": address,
+                "port": port,
+                "params": params
+            }
         )
 
 
