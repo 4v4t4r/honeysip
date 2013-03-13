@@ -1,765 +1,757 @@
-################################################################################
-#
-# Stand-alone VoIP honeypot client (preparation for Dionaea integration)
-# Copyright (c) 2010 Tobias Wulff (twu200 at gmail)
-#
-#
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation; either version 2 of the License, or (at your option) any later
-# version.
-# 
-# This program is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
-# details.
-# 
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, write to the Free Software Foundation, Inc., 51 Franklin
-# Street, Fifth Floor, Boston, MA  02110-1301, USA.
-#
-################################################################################
-#
-# Parts of the SIP response codes and a lot of SIP message parsing are taken
-# from the Twisted Core: http://twistedmatrix.com/trac/wiki/TwistedProjects
-#
-################################################################################
+#********************************************************************************
+#*                               Dionaea
+#*                           - catches bugs -
+#*
+#*
+#*
+#* Copyright (c) 2010 Tobias Wulff (twu200 at gmail)
+#*
+#* This program is free software; you can redistribute it and/or
+#* modify it under the terms of the GNU General Public License
+#* as published by the Free Software Foundation; either version 2
+#* of the License, or (at your option) any later version.
+#*
+#* This program is distributed in the hope that it will be useful,
+#* but WITHOUT ANY WARRANTY; without even the implied warranty of
+#* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#* GNU General Public License for more details.
+#*
+#* You should have received a copy of the GNU General Public License
+#* along with this program; if not, write to the Free Software
+#* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#*
+#*
+#*             contact nepenthesdev@gmail.com
+#*
+#*******************************************************************************/
+#*
+#*
+#* Parts of the SIP response codes and a lot of SIP message parsing are taken
+#* from the Twisted Core: http://twistedmatrix.com/trac/wiki/TwistedProjects
+#*
+#* The hash calculation for SIP authentication has been copied from SIPvicious
+#* Sipvicious (c) Sandro Gaucci: http://code.google.com/p/sipvicious
+#*******************************************************************************
+
 
 import logging
-import time
 import random
-import hashlib
+import os
+import datetime
+import tempfile
 
-from connection import connection
-from sdp import parseSdpMessage, SdpParsingError
-from config import g_config
+import conf
+from mock_connection import connection
 
-# Shortcut to sip config
-g_sipconfig = g_config['modules']['python']['sip']
+from extras import msg_to_icd, SipConfig, ErrorWithResponse
 
-# Setup logging mechanism
+# load config before loading the other sip modules
+g_sipconfig = SipConfig(conf.sip)
+
+import rfc3261
+import rfc4566
+import rfc2617
+
+
 logger = logging.getLogger('sip')
 logger.setLevel(logging.DEBUG)
-logConsole = logging.StreamHandler()
-logConsole.setLevel(logging.DEBUG)
-logConsole.setFormatter(logging.Formatter(
-	"%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-logger.addHandler(logConsole)
 
-TRYING                      = '100'
-RINGING                     = '180'
-CALL_FWD                    = '181'
-QUEUED                      = '182'
-PROGRESS                    = '183'
-OK                          = '200'
-ACCEPTED                    = '202'
-MULTI_CHOICES               = '300'
-MOVED_PERMANENTLY           = '301'
-MOVED_TEMPORARILY           = '302'
-SEE_OTHER					= '303'
-USE_PROXY                   = '305'
-ALT_SERVICE                 = '380'
-BAD_REQUEST                 = '400'
-UNAUTHORIZED                = '401'
-PAYMENT_REQUIRED            = '402'
-FORBIDDEN                   = '403'
-NOT_FOUND                   = '404'
-NOT_ALLOWED                 = '405'
-NOT_ACCEPTABLE              = '406'
-PROXY_AUTH_REQUIRED         = '407'
-REQUEST_TIMEOUT             = '408'
-CONFLICT                    = '409'
-GONE                        = '410'
-LENGTH_REQUIRED             = '411'
-ENTITY_TOO_LARGE            = '413'
-URI_TOO_LARGE               = '414'
-UNSUPPORTED_MEDIA           = '415'
-UNSUPPORTED_URI				= '416'
-BAD_EXTENSION               = '420'
-EXTENSION_REQUIRED			= '421'
-INTERVAL_TOO_BRIEF			= '423'
-NOT_AVAILABLE               = '480'
-NO_TRANSACTION              = '481'
-LOOP                        = '482'
-TOO_MANY_HOPS               = '483'
-ADDRESS_INCOMPLETE          = '484'
-AMBIGUOUS                   = '485'
-BUSY_HERE                   = '486'
-CANCELLED                   = '487'
-NOT_ACCEPTABLE_HERE         = '488'
-REQUEST_PENDING				= '491'
-UNDECIPHERABLE				= '493'
-INTERNAL_ERROR              = '500'
-NOT_IMPLEMENTED             = '501'
-BAD_GATEWAY                 = '502'
-UNAVAILABLE                 = '503'
-GATEWAY_TIMEOUT             = '504'
-SIP_VERSION_NOT_SUPPORTED   = '505'
-MESSAGE_TOO_LARGE			= '513'
-BUSY_EVERYWHERE             = '600'
-DECLINE                     = '603'
-DOES_NOT_EXIST              = '604'
-NOT_ACCEPTABLE_6xx          = '606'
+_SipCall_sustain_timeout = 20
 
-# SIP Responses from SIP Demystified by Gonzalo Camarillo
-RESPONSE = { 
-	# 1xx
-	TRYING:                     '100 Trying',
-	RINGING:                    '180 Ringing',
-	CALL_FWD:                   '181 Call is being forwarded',
-	QUEUED:                     '182 Queued',
-	PROGRESS:                   '183 Session progress',
+# Dictionary with SIP sessions (key is Call-ID)
+g_call_ids = {}
 
-	# 2xx
-	OK:                         '200 OK',
-	ACCEPTED:                   '202 Accepted',
 
-	# 3xx
-	MULTI_CHOICES:              '300 Multiple choices',
-	MOVED_PERMANENTLY:          '301 Moved permanently',
-	MOVED_TEMPORARILY:          '302 Moved temporarily',
-	SEE_OTHER:					'303 See other',
-	USE_PROXY:                  '305 Use proxy',
-	ALT_SERVICE:                '380 Alternative service',
+class AuthenticationError(Exception):
+    """Exception class for errors occuring during SIP authentication"""
 
-	# 4xx
-	BAD_REQUEST:                '400 Bad request',
-	UNAUTHORIZED:               '401 Unauthorized',
-	PAYMENT_REQUIRED:           '402 Payment required',
-	FORBIDDEN:                  '403 Forbidden',
-	NOT_FOUND:                  '404 Not found',
-	NOT_ALLOWED:                '405 Method not allowed',
-	NOT_ACCEPTABLE:             '406 Not acceptable',
-	PROXY_AUTH_REQUIRED:        '407 Proxy authentication required',
-	REQUEST_TIMEOUT:            '408 Request time-out',
-	CONFLICT:                   '409 Conflict',
-	GONE:                       '410 Gone',
-	LENGTH_REQUIRED:            '411 Length required',
-	ENTITY_TOO_LARGE:           '413 Request entity too large',
-	URI_TOO_LARGE:              '414 Request-URI too large',
-	UNSUPPORTED_MEDIA:          '415 Unsupported media type',
-	UNSUPPORTED_URI:			'416 Unsupported URI scheme',
-	BAD_EXTENSION:              '420 Bad extension',
-	EXTENSION_REQUIRED:			'421 Extension required',
-	INTERVAL_TOO_BRIEF:			'423 Interval too brief',
-	NOT_AVAILABLE:              '480 Temporarily not available',
-	NO_TRANSACTION:             '481 Call leg/transaction does not exist',
-	LOOP:                       '482 Loop detected',
-	TOO_MANY_HOPS:              '483 Too many hops',
-	ADDRESS_INCOMPLETE:         '484 Address incomplete',
-	AMBIGUOUS:                  '485 Ambiguous',
-	BUSY_HERE:                  '486 Busy here',
-	CANCELLED:                  '487 Request cancelled',
-	NOT_ACCEPTABLE_HERE:        '488 Not acceptable here',
-	REQUEST_PENDING:			'491 Request pending',
-	UNDECIPHERABLE:				'493 Undecipherable',
 
-	# 5xx
-	INTERNAL_ERROR:             '500 Internal server error',
-	NOT_IMPLEMENTED:            '501 Not implemented',
-	BAD_GATEWAY:                '502 Bad gateway',
-	UNAVAILABLE:                '503 Service unavailable',
-	GATEWAY_TIMEOUT:            '504 Gateway time-out',
-	SIP_VERSION_NOT_SUPPORTED:  '505 SIP version not supported',
-	MESSAGE_TOO_LARGE:			'513 Message too large',
+def cleanup(watcher, events):
+    logger.debug("Cleanup")
 
-	# 6xx
-	BUSY_EVERYWHERE:            '600 Busy everywhere',
-	DECLINE:                    '603 Decline',
-	DOES_NOT_EXIST:             '604 Does not exist anywhere',
-	NOT_ACCEPTABLE_6xx:         '606 Not acceptable'
-}
+    global g_call_ids
 
-# SIP headers have short forms
-shortHeaders = {"call-id": "i",
-                "contact": "m",
-                "content-encoding": "e",
-                "content-length": "l",
-                "content-type": "c",
-                "from": "f",
-                "subject": "s",
-                "to": "t",
-                "via": "v",
-				"cseq": "cseq",
-				"accept": "accept",
-				"user-agent": "user-agent",
-				"max-forwards": "max-forwards",
-				"www-authentication": "www-authentication",
-				"authorization": "authorization"
-                }
+    keys = g_call_ids.keys()
+    for key in list(keys):
+        if not g_call_ids[key]:
+            del g_call_ids[key]
 
-longHeaders = {}
-for k, v in shortHeaders.items():
-    longHeaders[v] = k
-del k, v
 
-class SipParsingError(Exception):
-	"""Exception class for errors occuring during SIP message parsing"""
+class User(object):
+    def __init__(self, user_id, **kwargs):
+        self.id = user_id
+        self.branch = kwargs.get("branch", None)
+        self.expires = kwargs.get("expires", 3600)
+        self._msg = kwargs.get("msg", None)
 
-def parseSipMessage(msg):
-	"""Parses a SIP message (string), returns a tupel (type, firstLine, header,
-	body)"""
-	# Sanitize input: remove superfluous leading and trailing newlines and
-	# spaces
-	msg = msg.strip("\n\r\t ")
+        if self._msg:
+            self.loads(self._msg)
 
-	# Split request/status line plus headers and body: we don't care about the
-	# body in the SIP parser
-	parts = msg.split("\n\n", 1)
-	if len(parts) < 1:
-		logger.error("Message too short")
-		raise SipParsingError("Message too short")
+        self.expire_time = datetime.datetime.now(), datetime.datetime.now() + datetime.timedelta(0, self.expires)
 
-	msg = parts[0]
+    def loads(self, msg):
+        # get branch
+        vias = msg.headers.get(b"via", [])
+        via = vias[-1]
+        self.branch = via.get_raw().get_param(b"branch")
 
-	# Python way of doing a ? b : c
-	body = len(parts) == 2 and parts[1] or ""
+        # get expires
+        try:
+            self.expires = int(msg.headers.get(b"expires"))
+        except:
+            pass
 
-	# Normalize line feed and carriage return to \n
-	msg = msg.replace("\n\r", "\n")
 
-	# Split lines into a list, each item containing one line
-	lines = msg.split('\n')
+class RegistrationManager(object):
+    def __init__(self):
+        self._users = {}
+        self._branches = {}
 
-	# Get message type (first word, smallest possible one is "ACK" or "BYE")
-	sep = lines[0].find(' ')
-	if sep < 3:
-		raise SipParsingError("Malformed request or status line")
+    def register(self, user):
+        if not user.id in self._users:
+            self._users[user.id] = []
 
-	msgType = lines[0][:sep]
-	firstLine = lines[0][sep+1:]
+        self._users[user.id].append(user)
 
-	# Done with first line: delete from list of lines
-	del lines[0]
 
-	# Parse header
-	headers = {}
-	for i in range(len(lines)):
-		# Take first line and remove from list of lines
-		line = lines.pop(0)
+g_reg_manager = RegistrationManager()
 
-		# Strip each line of leading and trailing whitespaces
-		line = line.strip("\n\r\t ")
-
-		# Break on empty line (end of headers)
-		if len(line.strip(' ')) == 0:
-			break
-
-		# Parse header lines
-		sep = line.find(':')
-		if sep < 1:
-			raise SipParsingError("Malformed header line (no ':')")
-
-		# Get header identifier (word before the ':')
-		identifier = line[:sep]
-		identifier = identifier.lower()
-
-		# Check for valid header
-		if identifier not in shortHeaders.keys() and \
-			identifier not in longHeaders.keys():
-			raise SipParsingError("Unknown header type: {}".format(identifier))
-
-		# Get long header identifier if necessary
-		if identifier in longHeaders.keys():
-			identifier = longHeaders[identifier]
-
-		# Get header value (line after ':')
-		value = line[sep+1:].strip(' ')
-
-		# The Via header can occur multiple times
-		if identifier == "via":
-			if identifier not in headers:
-				headers["via"] = [value]
-			else:
-				headers["via"].append(value)
-
-		# Assign any other header value directly to the header key
-		else:
-			headers[identifier] = value
-
-	# Return message type, header dictionary, and body string
-	return (msgType, firstLine, headers, body)
 
 class RtpUdpStream(connection):
-	"""RTP stream that can send data and writes the whole conversation to a
-	file"""
-	def __init__(self, address, port):
-		connection.__init__(self, 'udp')
-
-		# Bind to free random port for incoming RTP traffic
-		self.bind(('',0))
-		self.__localport = self.getsockname()[1]
-
-		# The address and port of the remote host
-		self.__address = address
-		self.__port = port
-
-		# Send byte buffer
-		self.__sendBuffer = b''
-
-		# Create a stream dump file with date and time and random ID in case of
-		# flooding attacks
-		dumpDateTime = time.strftime("%Y%m%d_%H:%M:%S")
-		dumpId = random.randint(1000, 9999)
-		streamDumpFile = "stream_{0}_{1}.rtpdump".format(dumpDateTime, dumpId)
-
-		# Catch IO errors
-		try:
-			self.__streamDump = open(streamDumpFile, "wb")
-		except IOError as e:
-			logger.error("Could not open stream dump file: {}".format(e))
-			self.__streamDump = None
-
-		logger.debug("Created RTP channel :{} <-> :{}".format(
-			self.__localport, self.__port))
-
-	def writable(self):
-		return len(self.__sendBuffer) > 0
-
-	def handle_close(self):
-		self.close()
-
-	def handle_read(self):
-		# Don't have to get address and port because they're already known since
-		# __init__
-		logger.debug("Incoming RTP data ...")
-		data, _ = self.recvfrom(1024)
-
-		# Write data to disk
-		# TODO: Make sure this cannot cause DoS
-		if self.__streamDump:
-			self.__streamDump.write(data)
-
-	def handle_write(self):
-		# Because of the writable function, handle_write will only be called if
-		# there is data in the send buffer
-		bytesSent = self.send(self.__sendBuffer)
-
-		# Write the sent part of the buffer to the stream dump file
-		# TODO: separate inbound and outbound traffic?
-		if self.__streamDump:
-			self.__streamDump.write(self.__sendBuffer[:bytesSend])
-
-		# Shift sending window for next send or handle_write operation
-		self.__sendBuffer = self.__sendBuffer[bytesSend:]
-
-	def send(self, msg):
-		# Append to send buffer, handle_write will take care of socket operation
-		self.__sendBuffer += msg.encode('utf-8')
-
-	def close(self):
-		if self.__streamDump:
-			self.__streamDump.close()
-
-		connection.close(self)
-
-class SipSession(object):
-	"""Usually, a new SipSession instance is created when the SIP server
-	receives an INVITE message"""
-	NO_SESSION, SESSION_SETUP, ACTIVE_SESSION, SESSION_TEARDOWN = range(4)
-	sipConnection = None
-
-	def __init__(self, conInfo, rtpPort, inviteHeaders):
-		if not SipSession.sipConnection:
-			logger.error("SIP connection class variable not set")
-
-		# Store incoming information of the remote host
-		self.__inviteHeaders = inviteHeaders
-		self.__state = SipSession.SESSION_SETUP
-		self.__remoteAddress = conInfo[0]
-		self.__remoteSipPort = conInfo[1]
-		self.__remoteRtpPort = rtpPort
-
-		# Generate static values for SIP messages
-		global g_sipconfig
-		self.__sipTo = inviteHeaders['from']
-		self.__sipFrom = "{0} <sip:{0}@{1}>".format(g_sipconfig['user'],
-			g_sipconfig['ip'])
-		self.__sipVia = "SIP/2.0/UDP {}:{}".format(g_sipconfig['ip'],
-			g_sipconfig['port'])
-
-		# Create RTP stream instance and pass address and port of listening
-		# remote RTP host
-		self.__rtpStream = RtpUdpStream(self.__remoteAddress,
-			self.__remoteRtpPort)
-
-		# Send 180 Ringing to make honeypot appear more human-like
-		# TODO: Delay between 180 and 200
-		msgLines = []
-		msgLines.append("SIP/2.0 " + RESPONSE[RINGING])
-		msgLines.append("Via: " + self.__sipVia)
-		msgLines.append("Max-Forwards: 70")
-		msgLines.append("To: " + self.__sipTo)
-		msgLines.append("From: " + self.__sipFrom)
-		msgLines.append("Call-ID: {}".format(self.__inviteHeaders['call-id']))
-		msgLines.append("CSeq: 1 INVITE")
-		msgLines.append("Contact: " + self.__sipFrom)
-		msgLines.append("User-Agent: " + g_sipconfig['useragent'])
-		SipSession.sipConnection.send('\n'.join(msgLines))
-
-		# Send our RTP port to the remote host as a 200 OK response to the
-		# remote host's INVITE request
-		logger.debug("getsockname: {}".format(self.__rtpStream.getsockname()))
-		localRtpPort = self.__rtpStream.getsockname()[1]
-		
-		msgLines = []
-		msgLines.append("SIP/2.0 " + RESPONSE[OK])
-		msgLines.append("Via: " + self.__sipVia)
-		msgLines.append("Max-Forwards: 70")
-		msgLines.append("To: " + self.__sipTo)
-		msgLines.append("From: " + self.__sipFrom)
-		msgLines.append("Call-ID: {}".format(self.__inviteHeaders['call-id']))
-		msgLines.append("CSeq: 1 INVITE")
-		msgLines.append("Contact: " + self.__sipFrom)
-		msgLines.append("User-Agent: " + g_sipconfig['useragent'])
-		msgLines.append("Content-Type: application/sdp")
-		msgLines.append("\nv=0")
-		msgLines.append("o=... 0 0 IN IP4 localhost")
-		msgLines.append("t=0 0")
-		msgLines.append("m=audio {} RTP/AVP 0".format(localRtpPort))
-		SipSession.sipConnection.send('\n'.join(msgLines))
-
-	def handle_ACK(self, headers, body):
-		if self.__state == SipSession.SESSION_SETUP:
-			logger.debug(
-				"Waiting for ACK after INVITE -> got ACK -> active session")
-			logger.info("Connection accepted (session {})".format(
-				self.__inviteHeaders['call-id']))
-
-			# Set current state to active (ready for multimedia stream)
-			self.__state = SipSession.ACTIVE_SESSION
-
-	def handle_BYE(self, headers, body):
-		global g_sipconfig
-
-		# Only close down RTP stream if session is active
-		if self.__state == SipSession.ACTIVE_SESSION:
-			self.__rtpStream.close()
-
-		# A BYE ends the session immediately
-		self.__state = SipSession.NO_SESSION
-
-		# Send OK response to other client
-		msgLines = []
-		msgLines.append("SIP/2.0 200 OK")
-		msgLines.append("Via: " + self.__sipVia)
-		msgLines.append("Max-Forwards: 70")
-		msgLines.append("To: " + self.__sipTo)
-		msgLines.append("From: " + self.__sipFrom)
-		msgLines.append("Call-ID: {}".format(self.__inviteHeaders['call-id']))
-		msgLines.append("CSeq: 1 BYE")
-		msgLines.append("Contact: " + self.__sipFrom)
-		msgLines.append("User-Agent: " + g_sipconfig['useragent'])
-		SipSession.sipConnection.send('\n'.join(msgLines))
-
-class Sip(connection):
-	"""Only UDP connections are supported at the moment"""
-	def __init__(self):
-		connection.__init__(self, 'udp')
-
-		# Set SIP connection in session class variable
-		SipSession.sipConnection = self
-
-		# Dictionary with SIP sessions (key is call-id)
-		self.__sessions = {}
-
-	def send(self, s):
-		logger.debug("sending to ({}:{})".format(
-			self.__remoteAddress, self.__remoteSipPort))
-		self.sendto(s.encode('utf-8'),
-			(self.__remoteAddress, self.__remoteSipPort))
-
-	def handle_read(self):
-		"""Callback for handling incoming SIP traffic"""
-		# TODO: Handle long messages
-		data, conInfo = self.recvfrom(1024)
-		self.__remoteAddress = conInfo[0]
-		self.__remoteSipPort = conInfo[1]
-
-		# Get byte data and decode to string
-		data = data.decode("utf-8")
-
-		# Parse SIP message
-		try:
-			msgType, firstLine, headers, body = parseSipMessage(data)
-		except SipParsingError as e:
-			logger.error(e)
-			return
-
-		if msgType == 'INVITE':
-			self.sip_INVITE(firstLine, headers, body)
-		elif msgType == 'ACK':
-			self.sip_ACK(firstLine, headers, body)
-		elif msgType == 'OPTIONS':
-			self.sip_OPTIONS(firstLine, headers, body)
-		elif msgType == 'BYE':
-			self.sip_BYE(firstLine, headers, body)
-		elif msgType == 'CANCEL':
-			self.sip_CANCEL(firstLine, headers, body)
-		elif msgType == 'REGISTER':
-			self.sip_REGISTER(firstLine, headers, body)
-		elif msgType == 'SIP/2.0':
-			self.sip_RESPONSE(firstLine, headers, body)
-		elif msgType == 'Error':
-			logger.error("Error on parsing SIP message")
-		else:
-			logger.error("Error: unknown header")
-
-	# SIP message type handlers
-	def sip_INVITE(self, requestLine, headers, body):
-		global g_sipconfig
-
-		# Print SIP header
-		logger.info("Received INVITE")
-		for k, v in headers.items():
-			logger.info("SIP header {}: {}".format(k, v))
-
-		if self.__checkForMissingHeaders(headers, ["accept", "content-type"]):
-			return
-
-		# Check authentication
-		if g_sipconfig['use_authentication']:
-			r = self.__challengeINVITE(headers)
-			if not r: return
-
-		# Header has to define Content-Type: application/sdp if body contains
-		# SDP message. Also, Accept has to be set to sdp so that we can send
-		# back a SDP response.
-		if headers["content-type"] != "application/sdp":
-			logger.error("INVITE without SDP message: exit")
-			return
-
-		if headers["accept"] != "application/sdp":
-			logger.error("INVITE without SDP message: exit")
-			return
-
-		# Check for SDP body
-		if not body:
-			logger.error("INVITE without SDP message: exit")
-			return
-
-		# Parse SDP part of session invite
-		try:
-			sessionDescription, mediaDescriptions = parseSdpMessage(body)
-		except SdpParsingError as e:
-			logger.error(e)
-			return
-
-		# Check for all necessary fields
-		sdpSessionOwnerParts = sessionDescription['o'].split(' ')
-		if len(sdpSessionOwnerParts) < 6:
-			logger.error("SDP session owner field to short: exit")
-			return
-
-		logger.debug("Parsed SDP message:")
-		logger.debug(sessionDescription)
-		logger.debug(mediaDescriptions)
-
-		# Get RTP port from SDP media description
-		if len(mediaDescriptions) < 1:
-			logger.error("SDP message has to include a media description: exit")
-			return
-		
-		mediaDescriptionParts = mediaDescriptions[0]['m'].split(' ')
-		if mediaDescriptionParts[0] != 'audio':
-			logger.error("SDP media description has to be of audio type: exit")
-			return
-
-		rtpPort = mediaDescriptionParts[1]
-
-		# Read Call-ID field and create new SipSession instance on first INVITE
-		# request received (remote host might send more than one because of time
-		# outs or because he wants to flood the honeypot)
-		callId = headers["call-id"]
-		if callId in self.__sessions:
-			logger.info("SIP session with Call-ID {} already exists".format(
-				callId))
-			return
-
-		# Establish a new SIP session
-		newSession = SipSession((self.__remoteAddress, self.__remoteSipPort),
-			rtpPort, headers)
-
-		# Store session object in sessions dictionary
-		self.__sessions[callId] = newSession
-
-	def sip_ACK(self, requestLine, headers, body):
-		logger.info("Received ACK")
-
-		if self.__checkForMissingHeaders(headers):
-			return
-
-		# Get SIP session for given Call-ID
-		try:
-			s = self.__sessions[headers["call-id"]]
-		except KeyError:
-			logger.error("Given Call-ID does not belong to a session: exit")
-			return
-		
-		# Handle incoming ACKs depending on current state
-		s.handle_ACK(headers, body)
-
-	def sip_OPTIONS(self, requestLine, headers, body):
-		logger.info("Received OPTIONS")
-
-		# Construct OPTIONS response
-		global g_sipconfig
-		msgLines = []
-		msgLines.append("SIP/2.0 " + RESPONSE[OK])
-		msgLines.append("Via: SIP/2.0/UDP {}:{}".format(g_sipconfig['ip'],
-			g_sipconfig['port']))
-		msgLines.append("To: " + headers['from'])
-		msgLines.append("From: {0} <sip:{0}@{1}>".format(g_sipconfig['user'],
-			g_sipconfig['ip']))
-		msgLines.append("Call-ID: " + headers['call-id'])
-		msgLines.append("CSeq: " + headers['cseq'])
-		msgLines.append("Contact: {0} <sip:{0}@{1}>".format(g_sipconfig['user'],
-			g_sipconfig['ip']))
-		msgLines.append("Allow: INVITE, ACK, CANCEL, OPTIONS, BYE")
-		msgLines.append("Accept: application/sdp")
-		msgLines.append("Accept-Language: en")
-
-		self.send('\n'.join(msgLines))
-
-	def sip_BYE(self, requestLine, headers, body):
-		logger.info("Received BYE")
-
-		if self.__checkForMissingHeaders(headers):
-			return
-
-		# Get SIP session for given Call-ID
-		try:
-			s = self.__sessions[headers["call-id"]]
-		except KeyError:
-			logger.error("Given Call-ID does not belong to a session: exit")
-			return
-		
-		# Handle incoming BYE request depending on current state
-		s.handle_BYE(headers, body)
-
-	def sip_CANCEL(self, requestLine, headers, body):
-		logger.info("Received CANCEL")
-
-		# Check mandatory headers
-		if self.__checkForMissingHeaders(headers):
-			return
-
-		# Get Call-Id and check if there's already a SipSession
-		callId = headers['call-id']
-
-		# Get CSeq to find out which request to cancel
-		cseq = headers['cseq'].split(' ')
-		cseqNumber = cseq[0]
-		cseqMethod = cseq[1]
-
-		if cseqMethod == "INVITE" or cseqMethod == "ACK":
-			# Find SipSession and delete it
-			if callId not in self.__sessions:
-				logger.info(
-					"CANCEL request does not match any existing SIP session")
-				return
-
-			# No RTP connection has been made yet so deleting the session
-			# instance is sufficient
-			del self.__session[callId]
-
-		
-		# Construct CANCEL response
-		global g_sipconfig
-		msgLines = []
-		msgLines.append("SIP/2.0 " + RESPONSE[OK])
-		msgLines.append("Via: SIP/2.0/UDP {}:{}".format(g_sipconfig['ip'],
-			g_sipconfig['port']))
-		msgLines.append("To: " + headers['from'])
-		msgLines.append("From: {0} <sip:{0}@{1}>".format(g_sipconfig['user'],
-			g_sipconfig['ip']))
-		msgLines.append("Call-ID: " + headers['call-id'])
-		msgLines.append("CSeq: " + headers['cseq'])
-		msgLines.append("Contact: {0} <sip:{0}@{1}>".format(g_sipconfig['user'],
-			g_sipconfig['ip']))
-
-		self.send('\n'.join(msgLines))
-
-	def sip_REGISTER(self, requestLine, headers, body):
-		logger.info("Received REGISTER")
-
-	def sip_RESPONSE(self, statusLine, headers, body):
-		logger.info("Received a response")
-
-	def __checkForMissingHeaders(self, headers, mandatoryHeaders=[]):
-		"""
-		Check for specific missing headers given as a list in the second
-		argument are present as keys in the dictionary of headers.
-		If list of mandatory headers is omitted, a set of common standard
-		headers is used: To, From, Call-ID, CSeq, and Contact.
-		"""
-		if not mandatoryHeaders:
-			mandatoryHeaders = ["to", "from", "call-id", "cseq", "contact"]
-
-		headerMissing = False
-
-		for m in mandatoryHeaders:
-			if m not in headers:
-				logger.warning("Mandatory header {} not in message".format(m))
-				headerMissing = True
-
-		return headerMissing
-
-	def __challengeINVITE(self, headers):
-		global g_sipconfig
-
-		def hash(s):
-			return hashlib.md5(s.encode('utf-8')).hexdigest()
-
-		nonce = hash("{}".format(time.time()))
-
-		if "authorization" not in headers:
-			# Send 401 Unauthorized response
-			msgLines = []
-			msgLines.append('SIP/2.0 ' + RESPONSE[UNAUTHORIZED])
-			msgLines.append("Via: SIP/2.0/UDP {}:{}".format(
-				g_sipconfig['ip'], g_sipconfig['port']))
-			msgLines.append("To: " + headers['from'])
-			msgLines.append("From: {0} <sip:{0}@{1}>".format(
-				g_sipconfig['user'], g_sipconfig['ip']))
-			msgLines.append("Call-ID: " + headers['call-id'])
-			msgLines.append("CSeq: " + headers['cseq'])
-			msgLines.append("Contact: {0} <sip:{0}@{1}>".format(
-				g_sipconfig['user'], g_sipconfig['ip']))
-			msgLines.append('WWW-Authenticate: Digest ' + \
-				'realm="{}@{}",'.format(g_sipconfig['user'],
-					g_sipconfig['ip']) + \
-				'nonce="{}",'.format(nonce) + \
-				'opaque="{}"'.format('1234567890'))
-
-			self.send('\n'.join(msgLines))
-		else:
-			# Check against config file
-			authMethod, authLine = headers['authorization'].split(' ', 1)
-			if authMethod != 'Digest':
-				logger.error("Authorization is not Digest")
-				return
-
-			# Get Authorization header parts (a="a", b="b", c="c", ...) and put
-			# them in a dictionary for easy lookup
-			authLineParts = [x.strip(' \t\r\n') for x in authLine.split(',')]
-			authLineDict = {}
-			for x in authLineParts:
-				parts = x.split('=')
-				authLineDict[parts[0]] = parts[1].strip(' \n\r\t"\'')
-
-			# The calculation of the expected response is taken from
-			# Sipvicious (c) Sandro Gaucci
-			# TODO: compare config values to values in Authorization header
-			realm = "{}@{}".format(g_sipconfig['user'], g_sipconfig['ip'])
-			uri = "sip:" + realm
-			a1 = hash("{}:{}:{}".format(
-				g_sipconfig['user'], realm, g_sipconfig['secret']))
-			a2 = hash("INVITE:{}".format(uri))
-			expected = hash("{}:{}:{}".format(a1, nonce, a2))
-
-			if expected != authLineDict['response']:
-				logger.error("Authorization failed")
-				return
-
-			return expected, authLineDict['response']
+    """RTP stream that can send data and writes the whole conversation to a
+    file"""
+    def __init__(self, name, call, session, local_address, local_port, remote_address, remote_port, bistream_enabled=False, pcap=None):
+        logger.debug("{:s} __init__".format(self))
+        connection.__init__(self, 'udp')
+
+        self._call = call
+        self._name = name
+        self._pcap = pcap
+        self._session = session
+
+        # Bind to free random port for incoming RTP traffic
+        self.bind(local_address, local_port)
+        self.connect(remote_address, remote_port)
+
+        # The address and port of the remote host
+        self.remote.host = remote_address
+        self.remote.port = remote_port
+
+        self._bistream = []
+        self._bistream_enabled = bistream_enabled
+
+        # Send byte buffer
+        self.__sendBuffer = b''
+
+        logger.info("Created RTP channel on ports :{} <-> :{}".format(
+            self.local.port, self.remote.port))
+
+    def close(self):
+        logger.debug("{:s} close".format(self))
+        logger.debug("Closing stream dump (in)")
+        connection.close(self)
+
+        if len(self._bistream) == 0:
+            return
+
+        now = datetime.datetime.now()
+        dirname = "%04i-%02i-%02i" % (now.year, now.month, now.day)
+        bistream_path = os.path.join('bistreams', dirname)
+        if not os.path.exists(bistream_path):
+            os.makedirs(bistream_path)
+
+        fp = tempfile.NamedTemporaryFile(
+            delete=False,
+            prefix="SipCall-{local_port}-{remote_host}:{remote_port}-".format(local_port=self.local.port, remote_host=self.remote.host, remote_port=self.remote.port),
+            dir=bistream_path
+        )
+        fp.write(b"stream = ")
+        fp.write(str(self._bistream).encode())
+        fp.close()
+
+    def handle_established(self):
+        logger.debug("{:s} handle_established".format(self))
+
+    def handle_timeout_idle(self):
+        logger.debug("{:s} handle_timeout_idle".format(self))
+        self.close()
+        return False
+
+    def handle_timeout_sustain(self):
+        logger.debug("{:s} handle_timeout_sustain".format(self))
+        return False
+
+    def handle_io_in(self, data):
+        logger.debug("{:s} handle_io_in".format(self))
+        #logger.debug("Incoming RTP data (length {})".format(len(data)))
+
+        if self._bistream_enabled:
+            self._bistream.append(("in", data))
+        if self._pcap:
+            self._pcap.write(src_port=self.remote.port, dst_port=self.local.port, data=data)
+
+        return len(data)
+
+    def handle_io_out(self):
+        logger.info("{:s} handle_io_out".format(self))
+
+    def handle_disconnect(self):
+        logger.info("{:s} handle_disconnect".format(self))
+        self._call.event_stream_closed(self._name)
+        self._pcap.close()
+        return False
+
+    def handle_error(self, err):
+        self._call.event_stream_closed(self._name)
+
+
+class SipCall(connection):
+    """
+    Usually, a new SipCall instance is created when the SIPSession
+    receives an INVITE message
+    """
+    CLOSED, SESSION_SETUP, ACTIVE_SESSION, SESSION_TEARDOWN, INVITE, INVITE_TRYING, INVITE_RINGING, INVITE_CANCEL, CALL = range(9)
+
+    def __init__(self, proto, call_id, session, invite_message):
+        logger.debug("{:s} __init__".format(self))
+
+        logger.debug("SipCall {} session {} ".format(self, session))
+        connection.__init__(self, proto)
+        # Store incoming information of the remote host
+
+        self.__session = session
+        self.__state = SipCall.SESSION_SETUP
+        self.__msg = invite_message
+        # list of messages
+        self._msg_stack = []
+
+        self.__call_id = invite_message.headers.get(b"call-id").value
+        self._call_id = call_id
+        self._rtp_streams = {}
+
+        self.local.host = self.__session.local.host
+        self.local.port = self.__session.local.port
+
+        self.remote.host = self.__session.remote.host
+        self.remote.port = self.__session.remote.port
+
+        user = self.__msg.headers.get(b"to").get_raw().uri.user
+
+        self._user = g_sipconfig.get_user_by_username(
+            self.__session.personality,
+            user
+        )
+
+        global _SipCall_sustain_timeout
+
+    def __handle_timeout_idle(self, watcher, events):
+        logger.debug("{:s} __handle_timeout_idle".format(self))
+
+        # check if at least one rtp stream is active
+        for v in self._rtp_streams.values():
+            if v:
+                return
+
+        logger.info("All RTP-Streams closed, closing call")
+        # no active rtp stream, close call
+        self.close()
+
+    def __handle_invite(self, watcher, events):
+        logger.debug("{:s} __handle_invite".format(self))
+
+        logger.info("Handle invite")
+        if self.__state == SipCall.INVITE:
+            logger.debug("Send TRYING")
+            # ToDo: Check authentication
+            #self.__authenticate(headers)
+
+            if not self._user:
+                msg = self.__msg.create_response(rfc3261.NOT_FOUND)
+                self.send(msg.dumps())
+                self.close()
+                return
+
+            msg = self.__msg.create_response(rfc3261.TRYING)
+
+            self.send(msg)
+
+            self.__state = SipCall.INVITE_TRYING
+            # Wait up to two seconds
+            self._timers["invite_handler"].set(random.random() * 2, 0)
+            self._timers["invite_handler"].start()
+            return
+
+        if self.__state == SipCall.INVITE_TRYING:
+            # Send 180 Ringing to make honeypot appear more human-like
+            logger.debug("Send RINGING")
+            msg = self.__msg.create_response(rfc3261.RINGING)
+
+            self.send(msg)
+
+            delay = random.randint(self._user.pickup_delay_min, self._user.pickup_delay_max)
+            logger.info("Choosing ring delay between {} and {} seconds: {}".format(self._user.pickup_delay_min, self._user.pickup_delay_max, delay))
+            self.__state = SipCall.INVITE_RINGING
+            self._timers["invite_handler"].set(delay, 0)
+            self._timers["invite_handler"].start()
+            return
+
+        if self.__state == SipCall.INVITE_RINGING:
+            logger.debug("Send OK")
+
+            # Create a stream dump file with date and time and random ID in case of
+            # flooding attacks
+            global g_sipconfig
+
+            pcap = g_sipconfig.get_pcap()
+
+            # Create RTP stream instance and pass address and port of listening
+            # remote RTP host
+
+            sdp = self.__msg.sdp
+            media_port_names = g_sipconfig.get_sdp_media_port_names(self._user.sdp)
+            media_ports = {}
+
+            for name in media_port_names:
+                media_ports[name] = None
+
+            bistream_enabled = False
+            if "bistream" in g_sipconfig._rtp.get("mode"):
+                bistream_enabled = True
+
+            for name in media_port_names:
+                for media in sdp.get(b"m"):
+                    if media.media.lower() == bytes(name[:5], "utf-8"):
+                        self._rtp_streams[name] = RtpUdpStream(
+                            name,
+                            self,
+                            self.__session,
+                            self.__session.local.host,
+                            # random port
+                            0,
+                            self.__session.remote.host,
+                            media.port,
+                            pcap = pcap,
+                            bistream_enabled = bistream_enabled
+                        )
+                        media_ports[name] = self._rtp_streams[name].local.port
+
+            # Send 200 OK and pick up the phone
+            msg = self.__msg.create_response(rfc3261.OK)
+
+            # ToDo: add IP6 support
+            msg.sdp = rfc4566.SDP.froms(
+                g_sipconfig.get_sdp_by_name(
+                    self._user.sdp,
+                    unicast_address=self.local.host,
+                    addrtype="IP4",
+                    media_ports=media_ports
+                )
+            )
+
+            msg_stack = self._msg_stack
+            msg_stack.append(("out", msg))
+
+            pcap.open(
+                msg_stack=msg_stack,
+                personality=self.__session.personality,
+                local_host=self.local.host,
+                local_port=self.local.port,
+                remote_host=self.remote.host,
+                remote_port=self.remote.port
+            )
+
+            self.send(msg)
+
+            self.__state = SipCall.CALL
+
+            # ToDo: Send rtp data?
+            return
+
+    def handle_timeout_idle(self):
+        logger.debug("{:s} handle_timeout_idle".format(self))
+        return False
+
+    def handle_timeout_sustain(self):
+        logger.debug("{:s} handle_timeout_sustain".format(self))
+        return False
+
+    def __handle_invite_timeout(self, watcher, events):
+        msg = self.__msg.create_response(rfc3261.OK)
+        self.send(msg)
+
+    def send(self, msg):
+        logger.debug("{:s} send".format(self))
+
+        self._timers["idle"].reset()
+
+        if type(msg) == rfc3261.Message:
+            self._msg_stack.append(("out", msg))
+            msg = msg.dumps()
+
+        self.__session.send(msg)
+
+    def close(self):
+        logger.debug("{:s} close".format(self))
+        logger.debug("SipCall.close {} Session {}".format(self, self.__session))
+
+        global g_call_ids
+        g_call_ids[self._call_id] = None
+        self.__state = SipCall.CLOSED
+
+        # stop timers
+        for name, timer in self._timers.items():
+            if not timer:
+                continue
+
+            logger.debug("SipCall timer {} active {} pending {}".format(timer,timer.active,timer.pending))
+            #if timer.active == True or timer.pending == True:
+            #	logger.warn("SipCall Stopping {}".format(name))
+
+            timer.stop()
+        self._timers = {}
+
+        # close rtpStream
+        for n, v in self._rtp_streams.items():
+            if v:
+                v.close()
+
+            self._rtp_streams[n] = None
+
+        self._rtp_streams = {}
+
+        # close connection
+        connection.close(self)
+
+    def event_stream_closed(self, name):
+        logger.debug("{:s} event_stream_closed".format(self))
+
+        self._rtp_streams[name] = None
+
+    def handle_ACK(self, msg_ack):
+        logger.debug("{:s} handle_ACK".format(self))
+        # does this ACK belong to a CANCEL request?
+        if not self.__state == SipCall.INVITE_CANCEL:
+            logger.info("No method to cancel")
+            return
+
+        cseq = self.__msg.headers.get(b"cseq").get_raw()
+        cseq_ack = msg_ack.headers.get(b"cseq").get_raw()
+
+        # does this ACK belong to this session?
+        if cseq.seq != cseq_ack.seq:
+            logger.info("Sequence number doesn't match INVITE id {}; ACK id {}".format(cseq.seq, cseq_ack.seq))
+            return
+
+        self.close()
+        return True
+
+    def handle_BYE(self, msg_bye):
+        logger.debug("{:s} handle_BYE".format(self))
+        if not self.__state == SipCall.CALL:
+            logger.info("BYE without call")
+            return
+
+        msg = msg_bye.create_response(rfc3261.OK)
+        self.send(msg.dumps())
+        self.close()
+        return True
+
+    def handle_CANCEL(self, msg_cancel):
+        logger.debug("{:s} handle_CANCEL".format(self))
+
+        if not (self.__state == SipCall.INVITE or self.__state == SipCall.INVITE_TRYING or self.__state == SipCall.INVITE_RINGING):
+            logger.info("No method to cancel")
+            return
+
+        cseq = self.__msg.headers.get(b"cseq").get_raw()
+        cseq_cancel = msg_cancel.headers.get(b"cseq").get_raw()
+
+        if cseq.seq != cseq_cancel.seq:
+            logger.info("Sequence number doesn't match INVITE id {}; CANCEL id {}".format(cseq.seq, cseq_cancel.seq))
+            return
+
+        self.__state = SipCall.INVITE_CANCEL
+
+        self._timers["invite_handler"].stop()
+
+        # RFC3261 send 487 Request Terminated after cancel
+        # old RFC2543 don't send 487
+        #ToDo: use timeout to close the session
+        msg = self.__msg.create_response(rfc3261.REQUEST_TERMINATED)
+        self.send(msg.dumps())
+        msg = msg_cancel.create_response(rfc3261.OK)
+        self.send(msg.dumps())
+
+    def handle_INVITE(self, msg):
+        logger.debug("{:s} handle_INVITE".format(self))
+
+        self.__state = SipCall.INVITE
+        self._timers["invite_handler"].set(0.1, 0)
+        self._timers["invite_handler"].data = msg
+        self._timers["invite_handler"].start()
+        return True
+
+    def handle_msg_in(self, msg):
+        self._timers["idle"].reset()
+        self._msg_stack.append(("in", msg))
+
+        handler_name = msg.method.decode("utf-8").upper()
+
+        try:
+            func = getattr(self, "handle_" + handler_name, None)
+        except:
+            func = None
+
+        if func is not None and callable(func) == True:
+            func(msg)
+
+
+class SipSession(connection):
+    ESTABLISHED, CLOSED = range(2)
+
+    def __init__(self, proto=None):
+        logger.debug("{:s} __init__".format(self))
+        self.transport = proto
+        connection.__init__(self, proto)
+        # FIXME: Use the proper address
+        self.personality = g_sipconfig.get_personality_by_address("192.168.1.2")
+
+        logger.info("SIP Session created with personality '{}'".format(self.personality))
+        self._auth = None
+        self._state = None
+
+    def handle_established(self):
+        logger.debug("{:s} handle_established".format(self))
+        self._state = SipSession.ESTABLISHED
+
+    def handle_timeout_sustain(self):
+        logger.debug("{:s} handle_timeout_sustain".format(self))
+        return True
+
+    def handle_timeout_idle(self):
+        logger.debug("{:s} handle_timeout_idle".format(self))
+        self.close()
+        return False
+
+    def handle_read(self):
+        data, source = self.recvfrom(1024)
+        self.remote_host = source[0]
+        self.remote_port = source[1]
+        print repr(data)
+        logger.debug("{:s} handle_io_in".format(self))
+        if self._state == SipSession.CLOSED:
+            # Don't process any data while the connection is closed.
+            return len(data)
+
+        if self.transport == "udp":
+            # Header must be terminated by an empty line.
+            # If empty line is missing add it.
+            # This works only for sip over udp but not for sip over tcp,
+            # because one UDP package is exactly one sip message.
+            # SIP-Servers like Asterisk do it the same way.
+            len_used = len(data)
+
+            if not b"\n\r\n" in data and not b"\n\n" in data:
+                data += b"\n\r\n"
+
+            # all lines must end with \r\n
+            data = data.replace(b"\r\n", b"\n")
+            data = data.replace(b"\n", b"\r\n")
+            try:
+                msg = rfc3261.Message.froms(data)
+            except rfc3261.SipParsingError:
+                self.close()
+                return len_used
+            except ErrorWithResponse as response:
+                self.send(response.create_response().dumps())
+                self.close()
+                return len_used
+
+        elif self.transport in ("tcp", "tls"):
+            try:
+                (len_used, data_load) = rfc3261.Message.loads(data)
+            except rfc3261.SipParsingError:
+                self.close()
+                return len(data)
+            except ErrorWithResponse as response:
+                self.send(response.create_response().dumps())
+                self.close()
+                return len(data)
+
+            # this is not the complete message, wait for the rest
+            if len_used == 0:
+                return 0
+
+            msg = rfc3261.Message(**data_load)
+            logger.debug("Got {} bytes, Used {} bytes".format(len(data), len_used))
+
+        msg.set_personality(self.personality)
+
+        handler_name = msg.method.decode("utf-8").upper()
+
+        if not g_sipconfig.is_handled_by_personality(handler_name, self.personality):
+            self.handle_unknown(msg)
+            return len(data)
+
+        logger.info("Received: {}".format(handler_name))
+
+        if handler_name in ('ACK','BYE','CANCEL'):
+            self._handle_ABC(msg)
+        else:
+            try:
+                func = getattr(self, "handle_" + handler_name, None)
+            except:
+                func = None
+            if func is not None and callable(func) == True:
+                func(msg)
+            else:
+                self.handle_unknown(msg)
+
+        logger.debug("io_in: returning {}".format(len_used))
+        return len_used
+
+    def close(self):
+        logger.debug("{:s} close".format(self))
+        self._state = SipSession.CLOSED
+        connection.close(self)
+
+    def handle_unknown(self, msg):
+        logger.debug("{:s} unknown".format(self))
+        logger.warn("Unknown SIP header: {}".format(repr(msg.method)[:128]))
+        res = msg.create_response(rfc3261.NOT_IMPLEMENTED)
+        d = res.dumps()
+        self.send(res.dumps())
+
+    def _handle_ABC(self, msg):
+        logger.debug("{:s} handle_ABC".format(self))
+        global g_call_ids
+        handler_name = msg.method.decode("utf-8").upper()
+        # check if Call-ID header exist
+        if not msg.header_exist(b"call-id"):
+            return
+
+        # Get Call-Id and check if there's already a SipSession
+        call_id = msg.headers.get(b"call-id").value
+
+        # ToDo: remove? we don't use it
+        # cseq = msg.headers.get(b"cseq").get_raw()
+
+        # Find SipSession and delete it
+        if call_id not in g_call_ids or not g_call_ids[call_id]:
+            logger.warn("{:s} request does not match any existing SIP session".format(handler_name))
+            self.send(msg.create_response(rfc3261.CALL_TRANSACTION_DOSE_NOT_EXIST).dumps())
+            return
+
+        try:
+            g_call_ids[call_id].handle_msg_in(msg)
+        except AuthenticationError:
+            logger.warn("Authentication failed for {:s} request".format(handler_name))
+
+    def handle_INVITE(self, msg):
+        logger.debug("{:s} handle_INVITE".format(self))
+
+        global g_sipconfig
+        global g_call_ids
+
+        # Read Call-ID field and create new SipCall instance on first INVITE
+        # request received (remote host might send more than one because of time
+        # outs or because he wants to flood the honeypot)
+        #logger.debug("Currently active sessions: {}".format(self._callids))
+
+        if not msg.header_exist(b"call-id"):
+            return
+
+        call_id = msg.headers.get(b"call-id").value
+
+        if call_id in g_call_ids and not g_call_ids[call_id]:
+            logger.warn("SIP session with Call-ID {} already exists".format(call_id[:128]))
+            # ToDo: error
+            return
+
+        # Establish a new SIP Call
+        new_call = SipCall(
+            self.transport,
+            call_id,
+            self,
+            msg
+        )
+
+        # Store session object in sessions dictionary
+        g_call_ids[call_id] = new_call
+
+        try:
+            r = new_call.handle_msg_in(msg)
+        except AuthenticationError:
+            logger.warn("Authentication failed, not creating SIP session")
+            new_call.close()
+            del new_call
+
+    def handle_OPTIONS(self, msg):
+        logger.debug("{:s} handle_OPTIONS".format(self))
+        res = msg.create_response(rfc3261.OK)
+        res.headers.append(rfc3261.Header(name="Accept", value="application/sdp"))
+        res.headers.append(rfc3261.Header(name="Accept-Language", value="en"))
+        self.send(res.dumps())
+
+    def handle_REGISTER(self, msg):
+        """
+        :See: http://tools.ietf.org/html/rfc3261#section-10
+        """
+        logger.debug("{:s} handle_REGISTER".format(self))
+        # ToDo: check for request-uri?
+        if not msg.headers_exist([b"to", b"from", b"call-id", b"cseq"]):
+            logger.warn("REGISTER, header missing")
+            # ToDo: return error
+            return
+
+        to = msg.headers.get(b"to")
+        user_id = to.get_raw().uri.user
+
+        u = g_sipconfig.get_user_by_username(self.personality, user_id)
+        # given user not found
+        if not u:
+            res = msg.create_response(rfc3261.NOT_FOUND)
+            self.send(res.dumps())
+            return
+
+        if u.password and u.password != "":
+            header_auth = msg.headers.get(b"authorization", None)
+            if not header_auth or not self._auth:
+                # ToDo: change nonce
+                self._auth = rfc2617.Authentication(
+                    method="digest",
+                    algorithm="md5",
+                    nonce="foobar123",
+                    realm=u.realm
+                )
+                res = msg.create_response(rfc3261.UNAUTHORIZED)
+                res.headers.append(rfc3261.Header(name=b"www-authenticate", value=self._auth))
+                self.send(res.dumps())
+                return
+
+            auth_response = rfc2617.Authentication.froms(header_auth[0].value)
+
+            # ToDo: change realm
+            if not self._auth.check(u.username, u.password, "REGISTER", auth_response):
+                # ToDo: change nonce
+                self._auth = rfc2617.Authentication(
+                    method="digest",
+                    algorithm="md5",
+                    nonce=b"foobar123",
+                    realm=u.realm
+                )
+                res = msg.create_response(rfc3261.UNAUTHORIZED)
+                res.headers.append(rfc3261.Header(name=b"www-authenticate", value=self._auth))
+                self.send(res.dumps())
+                return
+
+        user = User(user_id, msg=msg)
+        g_reg_manager.register(user)
+
+        res = msg.create_response(rfc3261.OK)
+        self.send(res.dumps())
+
+    def send(self, s):
+        logger.debug("{:s} send".format(self))
+        logger.debug('Sending message "{}" to ({}:{})'.format(s, self.remote_host, self.remote_port))
+        connection.send(self, s, (self.remote_host, self.remote_port))
