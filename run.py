@@ -35,7 +35,7 @@ logger.addHandler(logConsole)
 
 if __name__ == '__main__':
     s = sip.SipSession(proto="udp")
-    s.bind(('192.168.1.2', 5060))
+    s.bind(('localhost', 5060))
 
     try:
         print "Looping now..."
