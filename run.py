@@ -11,7 +11,7 @@ import sip
 
 
 if __name__ == '__main__':
-    sip_session = sip.SipSession(addr=('192.168.1.2', 5060), proto="udp")
+    sip_session = sip.SipSession(addr=('localhost', 5060), proto="udp")
     try:
         sip_session.serve_forever()
     except KeyboardInterrupt:

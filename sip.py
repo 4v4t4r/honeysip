@@ -217,7 +217,6 @@ class SipCall(connection):
         logger.debug("SipCall {} session {} ".format(self, session))
         connection.__init__(self, proto)
         # Store incoming information of the remote host
-
         self.__session = session
         self.__state = SipCall.SESSION_SETUP
         self.__msg = invite_message
@@ -587,7 +586,7 @@ class SipSession(connection):
 
         logger.info("Received: {}".format(handler_name))
 
-        if handler_name in ('ACK','BYE','CANCEL'):
+        if handler_name in ('ACK', 'BYE', 'CANCEL'):
             self._handle_ABC(msg)
         else:
             try:
@@ -743,7 +742,7 @@ class SipSession(connection):
         res = msg.create_response(rfc3261.OK)
         self.send(res.dumps())
 
-    def send(self, s):
+    def send(self, data):
         logger.debug("{:s} send".format(self))
-        logger.debug('Sending message "{}" to ({}:{})'.format(s, self.remote_host, self.remote_port))
-        self.socket.sendto(s, (self.remote_host, self.remote_port))
+        logger.debug('Sending message "{}" to ({}:{})'.format(data, self.remote_host, self.remote_port))
+        self.sendto(data, (self.remote_host, self.remote_port))
