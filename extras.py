@@ -123,9 +123,9 @@ class SipConfig(object):
         # ToDo: read values from config
         # set default values
         self.timers = {
-        "idle": {
-        "timeout": 30
-        }
+            "idle": {
+            "timeout": 30
+            }
         }
 
         self._rtp = config.get("rtp", {})
@@ -138,22 +138,19 @@ class SipConfig(object):
 
         self.actions = config.get("actions", {})
 
-
     def _table_exists(self, name):
         """
         Check if table exists
         """
         ret = self._cur.execute("SELECT name FROM sqlite_master WHERE type='table' and name=?", (name,))
-        if ret.fetchone() == None:
+        if not ret.fetchone():
             return False
         return True
-
 
     def get_action(self, name):
         # ToDo:
         #return (func, params)
         pass
-
 
     def get_handlers_by_personality(self, personality):
         if not personality in self.personalities:
@@ -171,9 +168,9 @@ class SipConfig(object):
             timeout = timer["timeout"]
         )
 
-
     def get_user_by_username(self, personality, username):
         conn = sqlite3.connect(self.users)
+
         def regexp(expr, value):
             if type(expr) != str:
                 expr = str(expr)
@@ -183,7 +180,7 @@ class SipConfig(object):
         sqlite3.enable_callback_tracebacks(True)
         conn.create_function("regexp", 2, regexp)
 
-        if username == None:
+        if not username:
             username = b""
 
         username = username.decode("utf-8")
@@ -192,7 +189,7 @@ class SipConfig(object):
         cur.execute("SELECT username, password, pickup_delay_min, pickup_delay_max, action, sdp FROM users WHERE personality = ? AND ? REGEXP username", (personality, username))
         row = cur.fetchone()
 
-        if row == None:
+        if not row:
             return None
 
         password = row[1]
@@ -200,19 +197,18 @@ class SipConfig(object):
             password = str(password)
 
         sdp = row[5]
-        if sdp == '' or sdp == None:
+        if sdp == '' or not sdp:
             sdp = self.personalities[personality].default_sdp
 
         return User(
-            username = username,
-            username_regex = row[0],
-            password = password,
-            pickup_delay_min = row[2],
-            pickup_delay_max = row[3],
-            action = row[4],
-            sdp = row[5]
+            username=username,
+            username_regex=row[0],
+            password=password,
+            pickup_delay_min=row[2],
+            pickup_delay_max=row[3],
+            action=row[4],
+            sdp=row[5]
         )
-
 
     def get_personality_by_address(self, address):
         for pers_name, personality in self.personalities.items():
@@ -221,23 +217,21 @@ class SipConfig(object):
                     return pers_name
         return "default"
 
-
-    def get_rtp(self, msg_stack = []):
+    def get_rtp(self, msg_stack=[]):
         pcap_conf = self._rtp.get("pcap", {})
         return RTP(
-            path = pcap_conf.get("path", "var/dionaea/rtp/{personality}/%Y-%m-%d/"),
-            filename = pcap_conf.get("filename", "%H:%M:%S_{remote_host}_{remote_port}_in.pcap"),
-            enable = self._rtp.get("enable", False),
-            mode = self._rtp.get("mode", ["pcap"])
+            path=pcap_conf.get("path", "var/dionaea/rtp/{personality}/%Y-%m-%d/"),
+            filename=pcap_conf.get("filename", "%H:%M:%S_{remote_host}_{remote_port}_in.pcap"),
+            enable=self._rtp.get("enable", False),
+            mode=self._rtp.get("mode", ["pcap"])
         )
 
     def get_pcap(self):
         pcap_conf = self._rtp.get("pcap", {})
         return PCAP(
-            path = pcap_conf.get("path", "var/dionaea/rtp/{personality}/%Y-%m-%d/"),
-            filename = pcap_conf.get("filename", "%H:%M:%S_{remote_host}_{remote_port}_in.pcap"),
+            path=pcap_conf.get("path", "var/dionaea/rtp/{personality}/%Y-%m-%d/"),
+            filename=pcap_conf.get("filename", "%H:%M:%S_{remote_host}_{remote_port}_in.pcap"),
             )
-
 
     def get_sdp_by_name(self, name, media_ports, **params):
         """
@@ -247,18 +241,18 @@ class SipConfig(object):
         ret = self._cur.execute("SELECT sdp FROM sdp WHERE name='?'")
         data = ret.fetchone()
 
-        if data == None:
+        if not data:
             # try to fetch the default sdp from the db
             ret = self._cur.execute("SELECT sdp FROM sdp WHERE name='default'")
             data = ret.fetchone()
 
-        if data == None:
+        if not data:
             data = (DEFAULT_SDP,)
 
         sdp = data[0]
-        for n,v in media_ports.items():
-            if v == None:
-                sdp = re.sub("\[" + n +"\].*\[\/" + n + "\]", "", sdp, 0, re.DOTALL)
+        for n, v in media_ports.items():
+            if not v:
+                sdp = re.sub("\[" + n + "\].*\[\/" + n + "\]", "", sdp, 0, re.DOTALL)
             else:
                 params[n] = v
 
@@ -272,12 +266,12 @@ class SipConfig(object):
         ret = self._cur.execute("SELECT sdp FROM sdp WHERE name='?'")
         data = ret.fetchone()
 
-        if data == None:
+        if not data:
             # try to fetch the default sdp from the db
             ret = self._cur.execute("SELECT sdp FROM sdp WHERE name='default'")
             data = ret.fetchone()
 
-        if data == None:
+        if not data:
             data = (DEFAULT_SDP,)
 
         media_ports = re.findall("{(audio_port[0-9]*|video_port[0-9]*)}", data[0])
@@ -296,6 +290,7 @@ class SipConfig(object):
 
         return False
 
+
 class PCAP(object):
     def __init__(self, path, filename):
         self.path = path
@@ -303,7 +298,7 @@ class PCAP(object):
         self._fp = None
 
     def __del__(self):
-        if self._fp != None:
+        if self._fp:
             self._fp.close()
 
     def _carry_arround_add(self, a, b):
@@ -315,10 +310,10 @@ class PCAP(object):
         for i in range(0, len(data), 2):
             word = data[i] + (data[i + 1] << 8)
             s = self._carry_arround_add(s, word)
-        return ~s & 0xffff
+        return s & 0xffff
 
     def close(self):
-        if self._fp != None:
+        if self._fp:
             self._fp.close()
         self._fp = None
 
@@ -341,7 +336,7 @@ class PCAP(object):
         except:
             logger.warning("Can't create RTP-Dump file: {}".format(os.path.join(path, filename)))
 
-        if self._fp == None:
+        if not self._fp:
             return False
 
         # write pcap global header
@@ -366,22 +361,25 @@ class PCAP(object):
             dst_port = 5060
             if msg[0] == "in":
                 src_ether = b"\x00\x00\x00\x00\x00\x02"
-                src_host = b"\x0A\x00\x00\x02" # 10.0.0.2
+                src_host = b"\x0A\x00\x00\x02"  # 10.0.0.2
                 dst_ether = b"\x00\x00\x00\x00\x00\x01"
-                dst_host = b"\x0A\x00\x00\x01" # 10.0.0.1
+                dst_host = b"\x0A\x00\x00\x01"  # 10.0.0.1
             else:
                 src_ether = b"\x00\x00\x00\x00\x00\x01"
-                src_host = b"\x0A\x00\x00\x01" # 10.0.0.1
+                src_host = b"\x0A\x00\x00\x01"  # 10.0.0.1
                 dst_ether = b"\x00\x00\x00\x00\x00\x02"
-                dst_host = b"\x0A\x00\x00\x02" # 10.0.0.2
+                dst_host = b"\x0A\x00\x00\x02"  # 10.0.0.2
 
-            self.write(ts = ts, tm = tm, src_ether = src_ether, src_host = src_host, src_port = src_port, dst_ether = dst_ether, dst_host = dst_host, dst_port = dst_port, data = msg[1].dumps())
+            self.write(ts=ts, tm=tm, src_ether=src_ether, src_host=src_host, src_port=src_port, dst_ether=dst_ether,
+                       dst_host=dst_host, dst_port=dst_port, data=msg[1].dumps())
 
-    def write(self, ts = None, tm = None, src_ether = b"\x00\x00\x00\x00\x00\x02", src_host = b"\x0A\x00\x00\x02", src_port = 5060, dst_ether = b"\x00\x00\x00\x00\x00\x01", dst_host = b"\x0A\x00\x00\x01", dst_port = 5060, data = b""):
-        if self._fp == None:
+    def write(self, ts=None, tm=None, src_ether=b"\x00\x00\x00\x00\x00\x02", src_host=b"\x0A\x00\x00\x02",
+              src_port=5060, dst_ether=b"\x00\x00\x00\x00\x00\x01", dst_host=b"\x0A\x00\x00\x01", dst_port=5060,
+              data=b""):
+        if not self._fp:
             return
 
-        if ts == None or tm == None:
+        if not ts or not tm:
             t = time.time()
             ts = int(t)
             tm = int((t - ts) * 1000000)
@@ -393,38 +391,38 @@ class PCAP(object):
 
         # udp header
         udp = struct.pack(">H", src_port)  # port src
-        udp = udp + struct.pack(">H", dst_port) # port dst
-        udp = udp + struct.pack(">H", len(data) + 8) # length
-        udp = udp + struct.pack(">H", 0) # checksum
-        udp = udp + data
+        udp += struct.pack(">H", dst_port)  # port dst
+        udp += struct.pack(">H", len(data) + 8)  # length
+        udp += struct.pack(">H", 0)  # checksum
+        udp += data
 
         # IPv4 header
-        ip = b"\x45" # version + header length 20bytes
-        ip = ip + b"\x00"
-        ip = ip + struct.pack(">H", len(udp) + 20) # pkt length
-        ip = ip + b"\x00\x00" # identification
-        ip = ip + b"\x40\x00" # flags(do not fragment) + fragment offset(0)
-        ip = ip + b"\x40\x11" # ttl(64) + protocol(udp)
-        ip = ip + b"\x00\x00" # header checksum
-        ip = ip + dst_host #b"\x0A\x00\x00\x01" # ip src
-        ip = ip + src_host #b"\x0A\x00\x00\x02" # ip dst
+        ip = b"\x45"  # version + header length 20bytes
+        ip += b"\x00"
+        ip += struct.pack(">H", len(udp) + 20)  # pkt length
+        ip += b"\x00\x00"  # identification
+        ip += b"\x40\x00"  # flags(do not fragment) + fragment offset(0)
+        ip += b"\x40\x11"  # ttl(64) + protocol(udp)
+        ip += b"\x00\x00"  # header checksum
+        ip += dst_host  # b"\x0A\x00\x00\x01" # ip src
+        ip += src_host  # b"\x0A\x00\x00\x02" # ip dst
 
         # add checksum to ip header
         ip = ip[:10] + struct.pack("<H", self._ip_checksum(ip)) + ip[12:]
 
         # ethernet header
-        ether = src_ether # MAC src
-        ether = ether + dst_ether # MAC dst
-        ether = ether + b"\x08\x00" # pkt type IPv4
+        ether = src_ether  # MAC src
+        ether += dst_ether  # MAC dst
+        ether += b"\x08\x00"  # pkt type IPv4
 
         pkt = ether + ip + udp
 
         # pcap packet header
-        pcap = struct.pack("i", ts) # time seconds
-        pcap = pcap + struct.pack("i", tm) # microseconds
-        pcap = pcap + struct.pack("i", len(pkt)) # length captured
-        pcap = pcap + struct.pack("i", len(pkt)) # real length
-        pcap = pcap + pkt
+        pcap = struct.pack("i", ts)  # time seconds
+        pcap += struct.pack("i", tm)  # microseconds
+        pcap += struct.pack("i", len(pkt))  # length captured
+        pcap += struct.pack("i", len(pkt))  # real length
+        pcap += pkt
 
         self._fp.write(pcap)
 
@@ -447,8 +445,9 @@ class User(object):
 
 
 def msg_to_icd(msg,d=None):
-    def via_to_dict(v,d=None):
-        if d is None: d = {}
+    def via_to_dict(v, d=None):
+        if d is None:
+            d = {}
         for i in ['protocol',
                   'address',
                   'port',
@@ -456,8 +455,10 @@ def msg_to_icd(msg,d=None):
         ]:
             d[i] = v.__dict__[i]
         return d
-    def uri_to_dict(u,d=None):
-        if d is None: d = {}
+
+    def uri_to_dict(u, d=None):
+        if d is None:
+            d = {}
         for i in ['scheme',
                   'user',
                   'password',
@@ -467,20 +468,24 @@ def msg_to_icd(msg,d=None):
                   'headers']:
             d[i] = u.__dict__[i]
         return d
-    def addr_to_dict(a,d=None):
-        if d is None: d = {}
-        for k,v in {'display_name':None,
-                    'uri':uri_to_dict,
+
+    def addr_to_dict(a, d=None):
+        if d is None:
+            d = {}
+        for k, v in {'display_name': None,
+                    'uri': uri_to_dict,
                     #'must_quote':None,
-                    'params':None
+                    'params': None
         }.items():
             if v is None:
                 d[k] = a.__dict__[k]
             else:
                 d[k] = v(a.__dict__[k])
         return d
+
     def connectiondata_to_dict(c,d=None):
-        if d is None: d = {}
+        if d is None:
+            d = {}
         for i in ['nettype',
                   'addrtype',
                   'connection_address',
@@ -488,9 +493,11 @@ def msg_to_icd(msg,d=None):
                   'number_of_addresses']:
             d[i] = c.__dict__[i]
         return d
+
     def origin_to_dict(o,d=None):
-        if d is None: d = {}
-        for i in  ['username',
+        if d is None:
+            d = {}
+        for i in ['username',
                    'sess_id',
                    'sess_version',
                    'nettype',
@@ -498,8 +505,10 @@ def msg_to_icd(msg,d=None):
                    'unicast_address']:
             d[i] = o.__dict__[i]
         return d
-    def media_to_dict(m,d=None):
-        if d is None: d = {}
+
+    def media_to_dict(m, d=None):
+        if d is None:
+            d = {}
         for i in ['media',
                   'port',
                   'number_of_ports',
@@ -509,24 +518,28 @@ def msg_to_icd(msg,d=None):
         ]:
             d[i] = m.__dict__[i]
         return d
-    def sdp_to_dict(b,d=None):
-        if d is None: d = {}
+
+    def sdp_to_dict(b, d=None):
+        if d is None:
+            d = {}
         if b is None:
             return None
-        d['c']= connectiondata_to_dict(b[b'c'])
-        d['o']= origin_to_dict(b[b'o'])
-        d['m']= [media_to_dict(i) for i in b[b'm']]
+        d['c'] = connectiondata_to_dict(b[b'c'])
+        d['o'] = origin_to_dict(b[b'o'])
+        d['m'] = [media_to_dict(i) for i in b[b'm']]
         return d
+
     def allow_to_list(a):
         if a is None:
             return []
-        allow=[]
+        allow = []
         for value in a:
             for val in value._value.decode('ascii').split(','):
                 allow.append(val.strip())
         return allow
 
-    if d is None: d = {}
+    if d is None:
+        d = {}
     d.set('method', msg.method)
     d.set('call_id', msg.headers.get('call-id').value)
     d.set('addr', addr_to_dict(msg.uri))
@@ -536,12 +549,12 @@ def msg_to_icd(msg,d=None):
     d.set('from', [addr_to_dict(f._value) for f in msg.headers.get('from')])
     d.set('sdp', sdp_to_dict(msg.sdp))
     if msg.headers.get('allow') is not None:
-        d.set('allow',allow_to_list(msg.headers.get('allow')))
+        d.set('allow', allow_to_list(msg.headers.get('allow')))
     else:
-        d.set('allow',[])
+        d.set('allow', [])
     if msg.headers.get('user-agent') is not None:
         d.set('user_agent', msg.headers.get('user-agent')._value)
     else:
-        d.set('user_agent',None)
+        d.set('user_agent', None)
     print(d)
     return d
