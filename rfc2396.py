@@ -24,7 +24,7 @@ class Address(object):
         re.compile(b'^[\ \t]*(?P<name>)(?P<uri>[^;]+)( *; *(?P<params>.*))?')
     ]
 
-    def __init__(self, display_name = None, uri = None, must_quote = None, params = {}):
+    def __init__(self, display_name=None, uri=None, must_quote=None, params={}):
         self.display_name = display_name
         self.uri = uri
         self.must_quote = must_quote
@@ -38,12 +38,12 @@ class Address(object):
         if self.display_name:
             r = b'"' + self.display_name + b'"'
             if self.uri:
-                r = r + b" "
+                r += b" "
 
         if not self.uri:
             return r
 
-        if self.must_quote or (self.display_name != None and self.display_name != b""):
+        if self.must_quote or self.display_name and self.display_name != b"":
             r = r + b"<" + self.uri.dumps() + b">"
         else:
             r = r + self.uri.dumps()
@@ -68,8 +68,8 @@ class Address(object):
         :return: length used
         :rtype: Integer
         """
-        if data == None:
-            return (0, {})
+        if not data:
+            return 0, {}
 
         for regex in cls._syntax:
             m = regex.match(data)
@@ -77,27 +77,27 @@ class Address(object):
                 display_name = m.groups()[0].strip()
                 uri = URI.froms(m.groups()[1].strip())
                 param_data = m.groupdict()["params"]
-                if param_data == None:
+                if not param_data:
                     return (
-                    m.end(),
-                    {
-                    "display_name": display_name,
-                    "uri": uri
-                    }
+                        m.end(),
+                        {
+                            "display_name": display_name,
+                            "uri": uri
+                        }
                     )
 
                 params = {}
                 for param in re.split(b" *; *", param_data):
-                    n,s,v = param.partition(b"=")
+                    n, s, v = param.partition(b"=")
                     params[n.strip()] = v.strip()
 
                 return (
-                m.end(),
-                {
-                "display_name": display_name,
-                "params": params,
-                "uri": uri
-                }
+                    m.end(),
+                    {
+                        "display_name": display_name,
+                        "params": params,
+                        "uri": uri
+                    }
                 )
 
         return 0, {}
@@ -115,17 +115,15 @@ class URI(object):
     >>> print(u.dumps() == d)
     True
     """
-
-
-    _syntax = re.compile(b"^(?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*):"  # scheme
-                         + b"(?:(?:(?P<user>[a-zA-Z0-9\-\_\.\!\~\*\'\(\)&=\+\$,;\?\/\%]+)" # user
-                         + b"(?::(?P<password>[^:@;\?]+))?)@)?" # password
-                         + b"(?:(?:(?P<host>[^;\?:]*)(?::(?P<port>[\d]+))?))"  # host, port
-                         + b"(?:;(?P<params>[^\?]*))?" # parameters
-                         + b"(?:\?(?P<headers>.*))?$" # headers
+    _syntax = re.compile(b"^(?P<scheme>[a-zA-Z][a-zA-Z0-9\+\-\.]*):"
+                         + b"(?:(?:(?P<user>[a-zA-Z0-9\-\_\.\!\~\*\'\(\)&=\+\$,;\?\/\%]+)"
+                         + b"(?::(?P<password>[^:@;\?]+))?)@)?"
+                         + b"(?:(?:(?P<host>[^;\?:]*)(?::(?P<port>[\d]+))?))"
+                         + b"(?:;(?P<params>[^\?]*))?"
+                         + b"(?:\?(?P<headers>.*))?$"
     )
 
-    def __init__(self, scheme = None, user = None, password = None, host = None, port = None, params = {}, headers = []):
+    def __init__(self, scheme=None, user=None, password=None, host=None, port=None, params={}, headers=[]):
         self.scheme = scheme
         self.user = user
         self.password = password
@@ -138,7 +136,7 @@ class URI(object):
         return self.dumps().decode('utf-8')
 
     def dumps(self):
-        if self.scheme == None:
+        if not self.scheme:
             return b"*"
 
         r = self.scheme + b":"
@@ -147,7 +145,7 @@ class URI(object):
             if self.password:
                 r = r + b":" + self.password
 
-            r = r + b"@"
+            r += b"@"
         if self.host:
             r = r + self.host
             if self.port:
@@ -176,7 +174,7 @@ class URI(object):
                 except:
                     logger.info("Can't parse or convert the URI.")
 
-                return (0, {})
+                return 0, {}
 
             port = m.group("port")
             # ToDo: error check
@@ -211,7 +209,7 @@ class URI(object):
                 }
             )
 
-        return (0, {})
+        return 0, {}
 
 if __name__ == '__main__':
     import doctest
