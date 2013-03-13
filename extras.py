@@ -47,6 +47,7 @@ def int2bytes(value):
     """
     return bytes(str(value))
 
+
 class ErrorWithResponse(Exception):
     def __init__(self, msg, response_code, status_message):
         self._msg = msg
@@ -70,18 +71,21 @@ class SipConfig(object):
         """
 
         self.root_path = os.getcwd()
-
-        self.users = os.path.join(self.root_path, config.get("users", "sipaccounts.sqlite"))
-
+        self.users = config.get("users", "sipaccounts.sqlite")
         self._conn = sqlite3.connect(self.users)
         self._cur = self._conn.cursor()
 
         if not self._table_exists("users"):
-            self._cur.execute("CREATE TABLE IF NOT EXISTS users (username STRING, password STRING, personality STRING, pickup_delay_min INTEGER, pickup_delay_max INTEGER, action STRING, sdp STRING)")
+            logger.info("creating table users")
+            self._cur.execute("""CREATE TABLE IF NOT EXISTS users (username STRING, password STRING, personality STRING,
+                                 pickup_delay_min INTEGER, pickup_delay_max INTEGER, action STRING, sdp STRING)""")
             # example without password
-            self._cur.execute("INSERT INTO users (username, password, personality, pickup_delay_min, pickup_delay_max, action, sdp) VALUES ('^[0-9]{1,12}$', '', 'default', 5, 10, 'default', 'default')")
+            self._cur.execute("""INSERT INTO users (username, password, personality, pickup_delay_min, pickup_delay_max,
+                                 action, sdp) VALUES ('^[0-9]{1,12}$', '', 'default', 5, 10, 'default', 'default')""")
             # example with password
-            self._cur.execute("INSERT INTO users (username, password, personality, pickup_delay_min, pickup_delay_max, action, sdp) VALUES ('^pw[0-9]{1,12}$', 'password', 'default', 5, 10, 'default', 'default')")
+            self._cur.execute("""INSERT INTO users (username, password, personality, pickup_delay_min, pickup_delay_max,
+                                 action, sdp) VALUES ('^pw[0-9]{1,12}$', 'password', 'default', 5, 10, 'default',
+                                 'default')""")
 
         if not self._table_exists("sdp"):
             self._cur.execute("CREATE TABLE IF NOT EXISTS sdp (name STRING, sdp STRING)")
@@ -89,14 +93,14 @@ class SipConfig(object):
 
         # set default values
         self.personalities = {
-        "default": {
-        "domain": "localhost",
-        "name": "",
-        "personality": "generic",
-        "serve": [],
-        "default_sdp": "default",
-        "handle": ["REGISTER", "OPTIONS", "INVITE", "CANCEL", "BYE", "ACK"]
-        }
+            "default": {
+                "domain": "localhost",
+                "name": "",
+                "personality": "generic",
+                "serve": [],
+                "default_sdp": "default",
+                "handle": ["REGISTER", "OPTIONS", "INVITE", "CANCEL", "BYE", "ACK"]
+            }
         }
 
         for pers_name, personality in config.get("personalities", {}).items():
