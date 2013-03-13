@@ -100,7 +100,8 @@ class Address(object):
                 }
                 )
 
-        return (0, {})
+        return 0, {}
+
 
 class URI(object):
     """
@@ -198,16 +199,16 @@ class URI(object):
                 headers = m.group("headers").split(b"&")
 
             return (
-            m.end(),
-            {
-            "scheme": m.group("scheme"),
-            "user": m.group("user"),
-            "password": m.group("password"),
-            "host": m.group("host"),
-            "port": port,
-            "headers": headers,
-            "params": params
-            }
+                m.end(),
+                {
+                    "scheme": m.group("scheme"),
+                    "user": m.group("user"),
+                    "password": m.group("password"),
+                    "host": m.group("host"),
+                    "port": port,
+                    "headers": headers,
+                    "params": params
+                }
             )
 
         return (0, {})

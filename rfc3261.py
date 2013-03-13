@@ -2,7 +2,9 @@ import re
 import logging
 import time
 
-import rfc2396, rfc4566
+import rfc2396
+import rfc4566
+
 from extras import int2bytes, ErrorWithResponse
 
 logger = logging.getLogger('sip')

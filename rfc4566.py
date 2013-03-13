@@ -13,8 +13,10 @@ from extras import int2bytes
 logger = logging.getLogger('sip')
 logger.setLevel(logging.DEBUG)
 
+
 class SdpParsingError(Exception):
     """Exception class for errors occuring during SDP message parsing"""
+
 
 class Attribute(object):
     """
@@ -62,6 +64,7 @@ class Attribute(object):
         if self.value == None:
             return self.attribute
         return b":".join([self.attribute, self.value])
+
 
 class Attributes(object):
     """
@@ -111,6 +114,7 @@ class Attributes(object):
 
         return attr.value
 
+
 class Bandwidth(object):
     """
     Format: b=<bwtype>:<bandwidth>
@@ -144,6 +148,7 @@ class Bandwidth(object):
 
     def dumps(self):
         return b":".join([self.bwtype, int2bytes(self.bandwidth)])
+
 
 class ConnectionData(object):
     """
@@ -218,6 +223,7 @@ class ConnectionData(object):
         # ToDo: IP6
 
         return b" ".join([self.nettype, self.addrtype, addr])
+
 
 class Media(object):
     """

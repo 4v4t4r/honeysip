@@ -31,6 +31,7 @@ def quote(data):
 
     return data
 
+
 def unquote(data):
     """
     Unquote a string
