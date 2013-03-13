@@ -20,12 +20,6 @@ sip = {
     },
     "personalities": {
         "default": {
-            "domain": "localhost",
-            "name": "softphone",
-            "personality": "generic"
-        },
-
-        "next-server": {
             "domain": "my-domain",
             "name": "my server",
             "personality": "generic",
