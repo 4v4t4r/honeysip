@@ -1,3 +1,6 @@
 .idea
 sipaccounts.sqlite
 sipaccounts.sqlite-journal
+
+*.pyc
+__pycache__

@@ -1,37 +1,37 @@
-#********************************************************************************
-#*                               Dionaea
-#*                           - catches bugs -
-#*
-#*
-#*
-#* Copyright (c) 2010 Tobias Wulff (twu200 at gmail)
-#*
-#* This program is free software; you can redistribute it and/or
-#* modify it under the terms of the GNU General Public License
-#* as published by the Free Software Foundation; either version 2
-#* of the License, or (at your option) any later version.
-#*
-#* This program is distributed in the hope that it will be useful,
-#* but WITHOUT ANY WARRANTY; without even the implied warranty of
-#* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#* GNU General Public License for more details.
-#*
-#* You should have received a copy of the GNU General Public License
-#* along with this program; if not, write to the Free Software
-#* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-#*
-#*
-#*             contact nepenthesdev@gmail.com
-#*
-#*******************************************************************************/
-#*
-#*
-#* Parts of the SIP response codes and a lot of SIP message parsing are taken
-#* from the Twisted Core: http://twistedmatrix.com/trac/wiki/TwistedProjects
-#*
-#* The hash calculation for SIP authentication has been copied from SIPvicious
-#* Sipvicious (c) Sandro Gaucci: http://code.google.com/p/sipvicious
-#*******************************************************************************
+# ********************************************************************************
+# *                               Dionaea
+# *                           - catches bugs -
+# *
+# *
+# *
+# * Copyright (c) 2010 Tobias Wulff (twu200 at gmail)
+# *
+# * This program is free software; you can redistribute it and/or
+# * modify it under the terms of the GNU General Public License
+# * as published by the Free Software Foundation; either version 2
+# * of the License, or (at your option) any later version.
+# *
+# * This program is distributed in the hope that it will be useful,
+# * but WITHOUT ANY WARRANTY; without even the implied warranty of
+# * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# * GNU General Public License for more details.
+# *
+# * You should have received a copy of the GNU General Public License
+# * along with this program; if not, write to the Free Software
+# * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+# *
+# *
+# *             contact nepenthesdev@gmail.com
+# *
+# *******************************************************************************/
+# *
+# *
+# * Parts of the SIP response codes and a lot of SIP message parsing are taken
+# * from the Twisted Core: http://twistedmatrix.com/trac/wiki/TwistedProjects
+# *
+# * The hash calculation for SIP authentication has been copied from SIPvicious
+# * Sipvicious (c) Sandro Gaucci: http://code.google.com/p/sipvicious
+# *******************************************************************************
 
 
 import logging
@@ -42,7 +42,7 @@ import tempfile
 
 import conf
 
-from gevent.server import DatagramServer as connection
+import asyncio
 
 logger = logging.getLogger('sip')
 logger.setLevel(logging.DEBUG)
@@ -107,7 +107,7 @@ class RegistrationManager(object):
         self._branches = {}
 
     def register(self, user):
-        if not user.id in self._users:
+        if user.id not in self._users:
             self._users[user.id] = []
 
         self._users[user.id].append(user)
@@ -116,12 +116,11 @@ class RegistrationManager(object):
 g_reg_manager = RegistrationManager()
 
 
-class RtpUdpStream(connection):
+class RtpUdpStream:
     """RTP stream that can send data and writes the whole conversation to a
     file"""
     def __init__(self, name, call, session, local_address, local_port, remote_address, remote_port, bistream_enabled=False, pcap=None):
         logger.debug("{:s} __init__".format(self))
-        connection.__init__(self, 'udp')
 
         self._call = call
         self._name = name
@@ -182,7 +181,7 @@ class RtpUdpStream(connection):
 
     def handle_io_in(self, data):
         logger.debug("{:s} handle_io_in".format(self))
-        #logger.debug("Incoming RTP data (length {})".format(len(data)))
+        # logger.debug("Incoming RTP data (length {})".format(len(data)))
 
         if self._bistream_enabled:
             self._bistream.append(("in", data))
@@ -204,7 +203,7 @@ class RtpUdpStream(connection):
         self._call.event_stream_closed(self._name)
 
 
-class SipCall(connection):
+class SipCall:
     """
     Usually, a new SipCall instance is created when the SIPSession
     receives an INVITE message
@@ -215,7 +214,6 @@ class SipCall(connection):
         logger.debug("{:s} __init__".format(self))
 
         logger.debug("SipCall {} session {} ".format(self, session))
-        connection.__init__(self, proto)
         # Store incoming information of the remote host
         self.__session = session
         self.__state = SipCall.SESSION_SETUP
@@ -259,7 +257,7 @@ class SipCall(connection):
         if self.__state == SipCall.INVITE:
             logger.debug("Send TRYING")
             # ToDo: Check authentication
-            #self.__authenticate(headers)
+            # self.__authenticate(headers)
 
             if not self._user:
                 msg = self.__msg.create_response(rfc3261.NOT_FOUND)
@@ -399,7 +397,7 @@ class SipCall(connection):
             if not timer:
                 continue
 
-            logger.debug("SipCall timer {} active {} pending {}".format(timer,timer.active,timer.pending))
+            logger.debug("SipCall timer {} active {} pending {}".format(timer, timer.active, timer.pending))
             #if timer.active == True or timer.pending == True:
             #	logger.warn("SipCall Stopping {}".format(name))
 
@@ -492,29 +490,32 @@ class SipCall(connection):
         self._msg_stack.append(("in", msg))
 
         handler_name = msg.method.decode("utf-8").upper()
+        print('Handler name: {}'.format(handler_name))
 
         try:
             func = getattr(self, "handle_" + handler_name, None)
         except:
             func = None
 
-        if func is not None and callable(func) == True:
+        if func is not None and callable(func):
             func(msg)
 
 
-class SipSession(connection):
+class SipSession:
     ESTABLISHED, CLOSED = range(2)
 
-    def __init__(self, addr, proto=None):
+    def __init__(self, proto=None):
         logger.debug("SipSession __init__")
         self.transport = proto
-        connection.__init__(self, addr)
         # FIXME: Use the proper address
         self.personality = g_sipconfig.get_personality_by_address("192.168.1.2")
 
         logger.info("SIP Session created with personality '{}'".format(self.personality))
         self._auth = None
         self._state = None
+
+    def connection_made(self, transport):
+        self.transport = transport
 
     def handle_established(self):
         logger.debug("{:s} handle_established".format(self))
@@ -525,11 +526,11 @@ class SipSession(connection):
         self.close()
         return False
 
-    def handle(self, data, source):
+    def datagram_received(self, data, source):
         logger.debug("{:s} handle".format(self))
         self.remote_host = source[0]
         self.remote_port = source[1]
-        print repr(data)
+        print(repr(data))
         if self._state == SipSession.CLOSED:
             # Don't process any data while the connection is closed.
             return len(data)
@@ -542,7 +543,7 @@ class SipSession(connection):
             # SIP-Servers like Asterisk do it the same way.
             len_used = len(data)
 
-            if not b"\n\r\n" in data and not b"\n\n" in data:
+            if b"\n\r\n" not in data and b"\n\n" not in data:
                 data += b"\n\r\n"
 
             # all lines must end with \r\n
@@ -579,6 +580,7 @@ class SipSession(connection):
         msg.set_personality(self.personality)
 
         handler_name = msg.method.decode("utf-8").upper()
+        print('Handler name: {}'.format(handler_name))
 
         if not g_sipconfig.is_handled_by_personality(handler_name, self.personality):
             self.handle_unknown(msg)

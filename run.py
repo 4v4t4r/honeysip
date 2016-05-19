@@ -1,4 +1,6 @@
 import logging
+import asyncio
+import sip
 
 # Setup logging mechanism
 logger = logging.getLogger('sip')
@@ -7,12 +9,19 @@ logConsole.setLevel(logging.DEBUG)
 logConsole.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 logger.addHandler(logConsole)
 
-import sip
-
 
 if __name__ == '__main__':
-    sip_session = sip.SipSession(addr=('localhost', 5060), proto="udp")
+    loop = asyncio.get_event_loop()
+    print("Starting UDP server")
+    # One protocol instance will be created to serve all client requests
+    listen = loop.create_datagram_endpoint(
+        sip.SipSession, local_addr=('127.0.0.1', 9999))
+    transport, protocol = loop.run_until_complete(listen)
+
     try:
-        sip_session.serve_forever()
+        loop.run_forever()
     except KeyboardInterrupt:
-        print("Closing socket...")
+        pass
+
+    transport.close()
+    loop.close()
