@@ -258,12 +258,18 @@ class Media(object):
         self.attributes = attributes
 
     @classmethod
-    def froms(cls,data):
+    def froms(cls, data):
         return cls(**cls.loads(data)[1])
 
     @classmethod
     def loads(cls, data):
-        media, ports, proto, rest = re.split(b" +", data, 3)
+        print("Media data", data)
+        splitted = re.split(b' +', data, 3)
+        media, ports, proto = splitted[:3]
+        if len(splitted) > 3:
+            rest = splitted[3]
+        else:
+            rest = b''
 
         # Media: currently defined media are "audio", "video", "text", "application", and "message"
         # check if we support the type and if not send an error?
@@ -441,7 +447,7 @@ class SDP(object):
                 elif k in cls._attributes_allowed:
                     attributes[k] = v
             except ValueError as error_msg:
-                logger.warning("Can't parse sdp data: '{}':  {:s}".format(repr(line)[:128], error_msg))
+                logger.warning("Can't parse sdp data: '{}':  {}".format(repr(line)[:128], error_msg))
                 raise SdpParsingError()
 
         a = {}

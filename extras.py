@@ -41,11 +41,11 @@ a=rtpmap:97 H263-N800/90000
 """
 
 
-def int2bytes(value):
+def int2bytes(x):
     """
     Convert integer to bytes
     """
-    return bytes(str(value))
+    return x.to_bytes((x.bit_length() // 8) + 1, byteorder='little')
 
 
 class ErrorWithResponse(Exception):

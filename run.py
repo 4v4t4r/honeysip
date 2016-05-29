@@ -15,7 +15,7 @@ if __name__ == '__main__':
     print("Starting UDP server")
     # One protocol instance will be created to serve all client requests
     listen = loop.create_datagram_endpoint(
-        sip.SipSession, local_addr=('127.0.0.1', 9999))
+        sip.SipSession, local_addr=('127.0.0.1', 5060))
     transport, protocol = loop.run_until_complete(listen)
 
     try:

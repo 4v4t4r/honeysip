@@ -25,7 +25,7 @@ sip = {
             "personality": "generic",
             "serve": ["192.168.1.2"],
             "default_sdp": "default",
-            "handle": ["REGISTER", "INVITE", "BYE", "CANCEL", "ACK"]
+            "handle": ["REGISTER", "INVITE", "BYE", "CANCEL", "ACK", "OPTIONS"]
         },
 
     },

@@ -160,7 +160,7 @@ class CSeq(object):
         if seq and type(seq) == str:
             seq = int(seq)
         if type(method) == str:
-            method = bytes(method)
+            method = method.encode('utf-8')
 
         self.seq = seq
         self.method = method
@@ -174,13 +174,14 @@ class CSeq(object):
 
     @classmethod
     def loads(cls, data):
+        print("CSeq data", data, type(data))
         if type(data) == str:
-            data = bytes(data)
+            data = data.encode('utf-8')
 
         d = data.partition(b" ")
-        seq = int(d[0].decode("utf-8"))
+        seq = int.from_bytes(d[0], 'little')
         method = d[2].strip()
-        return len(data), {'seq': seq,'method': method}
+        return len(data), {'seq': seq, 'method': method}
 
 
 class Header(object):
@@ -217,7 +218,7 @@ class Header(object):
         b"i": b"call-id",
         b"k": b"supported",
         b"l": b"content-length",
-        b"m": b"contact", # m = moved
+        b"m": b"contact",  # m = moved
         b"s": b"subject",
         b"t": b"to",
         b"v": b"via"
@@ -225,11 +226,11 @@ class Header(object):
 
     def __init__(self, name, value=None):
         if type(name) == str:
-            name = bytes(name)
+            name = name.encode('utf-8')
         self.name = name.lower()
 
         if type(value) == str:
-            value = bytes(value)
+            value = value.encode('utf-8')
         self._value = value
 
     def dumps(self):
@@ -245,9 +246,9 @@ class Header(object):
     @classmethod
     def loads(cls, data, name):
         if type(data) == str:
-                data = bytes(data)
+                data = data.encode('utf-8')
         if type(name) == str:
-            name = bytes(name)
+            name = name.encode('utf-8')
 
         if not name:
             data = data.strip()
@@ -363,13 +364,12 @@ class Headers(object):
 
         return ret
 
-
     def get(self, name, default = None):
         if type(name) == str:
-            name = bytes(name)
+            name = name.encode('utf-8')
 
         name = name.lower()
-        if not name in self._headers:
+        if name not in self._headers:
             return default
 
         return self._headers[name]
@@ -475,7 +475,7 @@ class Message(object):
                 res.status_message = b""
 
         if type(res.status_message) == str:
-            res.status_message = bytes(res.status_message)
+            res.status_message = res.status_message.encode('utf-8')
 
         for name in [b"cseq", b"call-id", b"via"]:
             res.headers.append(self.headers.get(name, None), True)
@@ -512,7 +512,7 @@ class Message(object):
         if self.method:
             h.append(self.method + b" " + self.uri.dumps() + b" " + self.protocol)
         elif self.response_code:
-            h.append(self.protocol + b" " + int2bytes(self.response_code) + b" " + self.status_message)
+            h.append(self.protocol + b" " + str(self.response_code).encode('utf-8') + b" " + self.status_message)
         else:
             return None
 
@@ -535,7 +535,7 @@ class Message(object):
         Check if a header with the given name exists
         """
         if type(header_name) == str:
-            header_name = bytes(header_name)
+            header_name = header_name.encode('utf-8')
 
         return self.headers_exist([header_name], True)
 
@@ -604,7 +604,7 @@ class Message(object):
         except:
             content_length = None
         if content_length:
-            if content_length <=  len(body):
+            if content_length <= len(body):
                 content = body[:content_length]
 
                 content_type = headers.get(b"content-type", None)
@@ -669,7 +669,7 @@ class Via(object):
 
     _syntax = re.compile(b"SIP */ *2\.0 */ *(?P<protocol>[a-zA-Z]+) *(?P<address>[^ :;]*) *(:(?P<port>[0-9]+))?( *; *(?P<params>.*))?")
 
-    def __init__(self, protocol = None, address = None, port = None, params = []):
+    def __init__(self, protocol=None, address=None, port=None, params=[]):
         self.protocol = protocol
         self.address = address
         self.port = port
@@ -678,7 +678,8 @@ class Via(object):
     def dumps(self):
         ret = b"SIP/2.0/" + self.protocol.upper() + b" " + self.address
         if self.port:
-            ret = ret + b":" + int2bytes(self.port)
+            print(self.port)
+            ret = ret + b":" + str(self.port).encode('utf-8')
 
         if self._params and len(self._params) > 0:
             params = []
@@ -710,6 +711,7 @@ class Via(object):
 
     @classmethod
     def loads(cls, data):
+        print("data", repr(data))
         m = cls._syntax.match(data)
         if not m:
             raise Exception("Error parsing the data")
